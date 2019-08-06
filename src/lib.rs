@@ -14,15 +14,11 @@ const CONSTS_32: [[u8; 4]; 4] = [
     [116, 101, 32, 107]
 ];
 
-fn rotl(value: u32, shift: u8) -> u32 {
-    (value << shift) | (value >> (32 - shift))
-} 
-
 fn quarterround(data: &mut [u32; 16], [y0, y1, y2, y3]: [usize; 4]) {
-    data[y1] ^= rotl(data[y0].wrapping_add(data[y3]), 7);
-    data[y2] ^= rotl(data[y1].wrapping_add(data[y0]), 9);
-    data[y3] ^= rotl(data[y2].wrapping_add(data[y1]), 13);
-    data[y0] ^= rotl(data[y3].wrapping_add(data[y2]), 18);
+    data[y1] ^= data[y0].wrapping_add(data[y3]).rotate_left(7);
+    data[y2] ^= data[y1].wrapping_add(data[y0]).rotate_left(9);
+    data[y3] ^= data[y2].wrapping_add(data[y1]).rotate_left(13);
+    data[y0] ^= data[y3].wrapping_add(data[y2]).rotate_left(18);
 }
 
 fn rowround(data: &mut [u32; 16]) {
@@ -147,7 +143,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rotl_test() {
-        assert_eq!(rotl(22, 3), 176);
+    fn salsa20_test() {
+        let mut input_data = [0; 64];
+        let mut expected_data = [0; 64];
+
+        salsa20(&mut input_data);
+        assert_eq!(input_data.to_vec(), expected_data.to_vec());
+
+        input_data = [
+            88, 118, 104, 54, 79, 201, 235, 79, 3, 81, 156, 47, 203, 26, 244,
+            243, 191, 187, 234, 136, 211, 159, 13, 115, 76, 55, 82, 183, 3,
+            117, 222, 37, 86, 16, 179, 207, 49, 237, 179, 48, 1, 106, 178, 219,
+            175, 199, 166, 48, 238, 55, 204, 36, 31, 240, 32, 63, 15, 83, 93,
+            161, 116, 147, 48, 113
+        ];
+
+        expected_data = [
+            179, 19, 48, 202, 219, 236, 232, 135, 111, 155, 110, 18, 24, 232,
+            95, 158, 26, 110, 170, 154, 109, 42, 178, 168, 156, 240, 248, 238,
+            168, 196, 190, 203, 69, 144, 51, 57, 29, 29, 150, 26, 150, 30, 235,
+            249, 190, 163, 251, 48, 27, 111, 114, 114, 118, 40, 152, 157, 180,
+            57, 27, 94, 107, 42, 236, 35
+        ];
+
+        salsa20(&mut input_data);
+        assert_eq!(input_data.to_vec(), expected_data.to_vec());
     }
 }
