@@ -1,19 +1,3 @@
-use std::mem::transmute;
-
-const CONSTS_16: [[u8; 4]; 4] = [
-    [101, 120, 112, 97],
-    [110, 100, 32, 49],
-    [54, 45, 98, 121],
-    [116, 101, 32, 107]
-];
-
-const CONSTS_32: [[u8; 4]; 4] = [
-    [101, 120, 112, 97],
-    [110, 100, 32, 51],
-    [50, 45, 98, 121],
-    [116, 101, 32, 107]
-];
-
 fn quarterround(data: &mut [u32; 16], [y0, y1, y2, y3]: [usize; 4]) {
     data[y1] ^= data[y0].wrapping_add(data[y3]).rotate_left(7);
     data[y2] ^= data[y1].wrapping_add(data[y0]).rotate_left(9);
@@ -40,133 +24,106 @@ fn doubleround(data: &mut [u32; 16]) {
     rowround(data);
 }
 
-fn bytes_to_word(data: [u8; 4]) -> u32 {
-    unsafe { transmute::<[u8; 4], u32>(data).to_le() }
-}
-
-fn word_to_bytes(value: u32) -> [u8; 4] {
-    unsafe { transmute::<u32, [u8; 4]>(value.to_le()) }
-}
-
-fn salsa20(data: &mut [u8; 64]) {
-    let mut words = [0; 16];
-
-    for word_index in 0..16 {
-        let byte_index = word_index * 4;
-        let word = bytes_to_word([
-            data[byte_index],
-            data[byte_index + 1],
-            data[byte_index + 2],
-            data[byte_index + 3]
-        ]);
-        words[word_index] = word;
-    }
-
-    let words_copy = words;
+fn hash(data: &[u32; 16], hash: &mut[u8]) {
+    let mut data_copy = data.clone();
 
     for _ in 0..10 {
-        doubleround(&mut words);
+        doubleround(&mut data_copy);
     }
 
-    for word_index in 0..16 {
-        let byte_index = word_index * 4;
-        let sum = words_copy[word_index].wrapping_add(words[word_index]);
-        let bytes = word_to_bytes(sum);
-        data[byte_index..byte_index + 4].copy_from_slice(&bytes[..]);
+    data.iter()
+        .zip(data_copy.iter())
+        .enumerate()
+        .for_each(|(index, (value, &value_copy))| {
+            let offset = index * 4;
+            let sum = value.wrapping_add(value_copy); 
+            hash[offset..offset + 4].copy_from_slice(&sum.to_le_bytes());
+        });
+}
+
+fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
+    for (index, word) in buffer.iter_mut().enumerate() {
+        let offset = index * 4;
+        *word = u32::from_le_bytes([
+            value[offset],
+            value[offset + 1],
+            value[offset + 2],
+            value[offset + 3]
+        ]);
     }
 }
 
-fn expand16(key: &[u8; 16], nonce: &[u8; 16], keystream: &mut [u8; 64]) {
-    for i in 0..4 {
-        for j in 0..4 {
-            keystream[i * 20 + j] = CONSTS_16[i][j];
+pub struct Salsa20 {
+    counter: u64,
+    block: [u32; 16],
+}
+
+impl Salsa20 {
+    pub fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
+        let mut block = [0; 16];
+        block[0] = 1634760814;
+        block[15] = 1797285230;
+        u8_to_u32(&nonce[..], &mut block[6..8]);
+
+        match key.len() {
+            16 => {
+                u8_to_u32(&key[..], &mut block[1..5]);
+                u8_to_u32(&key[..], &mut block[11..15]);
+                block[5] = 824206446;
+                block[10] = 1885482294;
+            }
+            32 => {
+                u8_to_u32(&key[0..16], &mut block[1..5]);
+                u8_to_u32(&key[16..32], &mut block[11..15]);
+                block[5] = 857760878;
+                block[10] = 1885482290;
+            } _ => {
+                panic!("Wrong key size.");
+            }
         }
+
+        Salsa20 { block, counter }
     }
 
-    for i in 0..16 {
-        keystream[i + 4] = key[i];
-        keystream[i + 44] = key[i];
-        keystream[i + 24] = nonce[i];
-    }
+    pub fn generate(&mut self, buffer: &mut [u8]) {
+        assert_eq!(buffer.len() % 64, 0);
 
-    salsa20(keystream);
-}
-
-fn expand32(key: &[u8; 32], nonce: &[u8; 16], keystream: &mut [u8; 64]) {
-    for i in 0..4 {
-        for j in 0..4 {
-            keystream[i * 20 + j] = CONSTS_32[i][j];
+        for offset in (0..buffer.len()).step_by(64) {
+           u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
+           hash(&self.block, &mut buffer[offset..offset + 64]);
+           self.counter += 1;
         }
-    }
-
-    for i in 0..16 {
-        keystream[i + 4] = key[i];
-        keystream[i + 44] = key[i + 16];
-        keystream[i + 24] = nonce[i];
-    }
-
-    salsa20(keystream);
-}
-
-pub enum Key<'a> {
-    Key16(&'a [u8; 16]),
-    Key32(&'a [u8; 32])
-}
-
-impl<'a> Key<'a> {
-    fn expand(&self, nonce: &[u8; 16], keystream: &mut [u8; 64]) {
-        match self {
-            Key::Key16(key) => expand16(key, nonce, keystream),
-            Key::Key32(key) => expand32(key, nonce, keystream)
-        }
-    }
-}
-
-pub fn encrypt(key: Key, nonce: &[u8; 8], buffer: &mut [u8]) {
-    let mut keystream: [u8; 64] = [0; 64];
-    let mut n: [u8; 16] = [0; 16];
-
-    n[..8].copy_from_slice(&nonce[..]);
-
-    for byte_index in 0..buffer.len() {
-        if byte_index % 64 == 0 {
-            let bytes = word_to_bytes((byte_index / 64) as u32);
-            n[8..12].copy_from_slice(&bytes[..]);
-            key.expand(&n, &mut keystream);
-        }
-        buffer[byte_index] ^= keystream[byte_index % 64];
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{hash, Salsa20};
+
+    fn new_test_salsa20() -> Salsa20 {
+        let key: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+            18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 31
+        ];
+        let nonce = [3, 1, 4, 1, 5, 9, 2, 6];
+        Salsa20::new(&key, &nonce, 0)
+    }
 
     #[test]
-    fn salsa20_test() {
-        let mut input_data = [0; 64];
-        let mut expected_data = [0; 64];
+    fn hash_test() {
+        let input_data = [0; 16];
+        let expected_data = [0; 64];
+        let mut hash_data = [0; 64];
 
-        salsa20(&mut input_data);
-        assert_eq!(input_data.to_vec(), expected_data.to_vec());
+        hash(&input_data, &mut hash_data);
+        assert_eq!(hash_data.to_vec(), expected_data.to_vec());
+    }
 
-        input_data = [
-            88, 118, 104, 54, 79, 201, 235, 79, 3, 81, 156, 47, 203, 26, 244,
-            243, 191, 187, 234, 136, 211, 159, 13, 115, 76, 55, 82, 183, 3,
-            117, 222, 37, 86, 16, 179, 207, 49, 237, 179, 48, 1, 106, 178, 219,
-            175, 199, 166, 48, 238, 55, 204, 36, 31, 240, 32, 63, 15, 83, 93,
-            161, 116, 147, 48, 113
-        ];
-
-        expected_data = [
-            179, 19, 48, 202, 219, 236, 232, 135, 111, 155, 110, 18, 24, 232,
-            95, 158, 26, 110, 170, 154, 109, 42, 178, 168, 156, 240, 248, 238,
-            168, 196, 190, 203, 69, 144, 51, 57, 29, 29, 150, 26, 150, 30, 235,
-            249, 190, 163, 251, 48, 27, 111, 114, 114, 118, 40, 152, 157, 180,
-            57, 27, 94, 107, 42, 236, 35
-        ];
-
-        salsa20(&mut input_data);
-        assert_eq!(input_data.to_vec(), expected_data.to_vec());
+    #[test]
+    fn generate_test() {
+        let mut salsa20 = new_test_salsa20();
+        let mut buffer = [0; 64];
+        
+        salsa20.generate(&mut buffer);
     }
 }
