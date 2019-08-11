@@ -1,25 +1,27 @@
 extern crate salsa20;
 extern crate rand;
 
-use std::time::Instant;
 use salsa20::Salsa20;
 
-fn new_test_salsa20() -> Salsa20 {
+#[test]
+#[inline(never)]
+fn generate_bench() {
     let key: [u8; 16] = rand::random();
     let nonce: [u8; 8] = rand::random();
-    Salsa20::new(&key, &nonce, 0)
-}
 
-#[test]
-fn generate_bench() {
-    let mut salsa20 = new_test_salsa20();
-    let mut buffer = [0; 1024 * 1024];
+    let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+    let mut buffer = [0; 1024];
 
-    let now = Instant::now();
-    for _ in 0..10 {
+    let n = 500;
+    let mut times = Vec::with_capacity(n);
+    for _ in 0..n {
+        let start = std::time::Instant::now();
         salsa20.generate(&mut buffer);
+        times.push(start.elapsed());
     }
-    let time = now.elapsed().as_millis();
-    println!("Millisec: {}", time);
-    println!("Mb/s: {}", 10_000 / time);
+
+    let min_time = times.into_iter().min().unwrap();
+    let speed = 1_000_000_000 / (min_time.as_nanos() * 1024);
+    println!("Time: {:?}", min_time);
+    println!("Speed: {} Mb/s", speed);
 }
