@@ -1,35 +1,55 @@
-fn quarterround(data: &mut [u32; 16], [y0, y1, y2, y3]: [usize; 4]) {
-    data[y1] ^= data[y0].wrapping_add(data[y3]).rotate_left(7);
-    data[y2] ^= data[y1].wrapping_add(data[y0]).rotate_left(9);
-    data[y3] ^= data[y2].wrapping_add(data[y1]).rotate_left(13);
-    data[y0] ^= data[y3].wrapping_add(data[y2]).rotate_left(18);
+#![no_std]
+
+fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
+    let y1 = y1 ^ y0.wrapping_add(y3).rotate_left(7);
+    let y2 = y2 ^ y1.wrapping_add(y0).rotate_left(9);
+    let y3 = y3 ^ y2.wrapping_add(y1).rotate_left(13);
+    let y0 = y0 ^ y3.wrapping_add(y2).rotate_left(18);
+
+    [y0, y1, y2, y3]
 }
 
-fn rowround(data: &mut [u32; 16]) {
-    quarterround(data, [0, 1, 2, 3]);
-    quarterround(data, [5, 6, 7, 4]);
-    quarterround(data, [10, 11, 8, 9]);
-    quarterround(data, [15, 12, 13, 14]);
+fn doubleround(y: [u32; 16]) -> [u32; 16] {
+    // columnround
+    let [
+        [z0, z4, z8, z12],
+        [z5, z9, z13, z1],
+        [z10, z14, z2, z6],
+        [z15, z3, z7, z11]
+    ] = [
+        quarterround(y[0], y[4], y[8], y[12]),
+        quarterround(y[5], y[9], y[13], y[1]),
+        quarterround(y[10], y[14], y[2], y[6]),
+        quarterround(y[15], y[3], y[7], y[11]),
+    ];
+    
+    // rowround
+    let [
+        [z0, z1, z2, z3],
+        [z5, z6, z7, z4],
+        [z10, z11, z8, z9],
+        [z15, z12, z13, z14]
+    ] = [
+        quarterround(z0, z1, z2, z3),
+        quarterround(z5, z6, z7, z4),
+        quarterround(z10, z11, z8, z9),
+        quarterround(z15, z12, z13, z14)
+    ];
+
+    [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
-fn columround(data: &mut [u32; 16]) {
-    quarterround(data, [0, 4, 8, 12]);
-    quarterround(data, [5, 9, 13, 1]);
-    quarterround(data, [10, 14, 2, 6]);
-    quarterround(data, [15, 3, 7, 11]);
-}
-
-fn doubleround(data: &mut [u32; 16]) {
-    columround(data);
-    rowround(data);
-}
-
-fn hash(data: &[u32; 16], hash: &mut[u8]) {
-    let mut data_copy = data.clone();
+fn doubleround_10(data: [u32; 16]) -> [u32; 16] {
+    let mut y = data;
 
     for _ in 0..10 {
-        doubleround(&mut data_copy);
+        y = doubleround(y);
     }
+    y
+}
+
+fn core(data: &[u32; 16], hash: &mut[u8]) {
+    let data_copy = doubleround_10(data.clone());
 
     data.iter()
         .zip(data_copy.iter())
@@ -90,7 +110,7 @@ impl Salsa20 {
 
         for offset in (0..buffer.len()).step_by(64) {
            u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
-           hash(&self.block, &mut buffer[offset..offset + 64]);
+           core(&self.block, &mut buffer[offset..offset + 64]);
            self.counter += 1;
         }
     }
@@ -98,11 +118,23 @@ impl Salsa20 {
 
 #[cfg(test)]
 mod tests {
-    use super::{doubleround, u8_to_u32, hash, Salsa20};
+    use super::{quarterround, doubleround, core, Salsa20};
+
+    #[test]
+    fn quarterround_test_dataset_1() {
+        assert_eq!(
+            quarterround(0x00000000, 0x00000000, 0x00000000, 0x00000000),
+            [0x00000000, 0x00000000, 0x00000000, 0x00000000]
+        );
+        assert_eq!(
+            quarterround(0xe7e8c006, 0xc4f9417d, 0x6479b4b2, 0x68c67137),
+            [0xe876d72b, 0x9361dfd5, 0xf1460244, 0x948541a3]
+        );
+    }
 
     #[test]
     fn doubleround_test_dataset_1() {
-        let mut input_data = [
+        let input_data = [
             0x00000001, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000, 0x00000000, 0x00000000,
             0x00000000, 0x00000000, 0x00000000, 0x00000000,
@@ -116,13 +148,12 @@ mod tests {
             0x20500000, 0xa0000040, 0x0008180a, 0x612a8020
         ];
 
-        doubleround(&mut input_data);
-        assert_eq!(input_data, expected_data);
+        assert_eq!(doubleround(input_data), expected_data);
     }
 
     #[test]
     fn doubleround_test_dataset_2() {
-        let mut input_data = [
+        let input_data = [
             0xde501066, 0x6f9eb8f7, 0xe4fbbd9b, 0x454e3f57,
             0xb75540d3, 0x43e93a4c, 0x3a6f2aa0, 0x726d6b36,
             0x9243f484, 0x9145d1e8, 0x4fa9d247, 0xdc8dee11,
@@ -136,17 +167,16 @@ mod tests {
             0xa74b2ad6, 0xbc331c5c, 0x1dda24c7, 0xee928277
         ];
 
-        doubleround(&mut input_data);
-        assert_eq!(input_data, expected_data);
-    }
-    
+        assert_eq!(doubleround(input_data), expected_data);
+    } 
+
     #[test]
     fn hash_test_dataset_1() {
         let input_data = [0; 16];
         let expected_data = [0; 64];
         let mut hash_data = [0; 64];
 
-        hash(&input_data, &mut hash_data);
+        core(&input_data, &mut hash_data);
         assert_eq!(hash_data.to_vec(), expected_data.to_vec());
     }
 
@@ -164,7 +194,7 @@ mod tests {
 
         let mut hash_data = [0; 64];
 
-        hash(&input_data, &mut hash_data);
+        core(&input_data, &mut hash_data);
         assert_eq!(hash_data.to_vec(), expected_data.to_vec());
     }
 
