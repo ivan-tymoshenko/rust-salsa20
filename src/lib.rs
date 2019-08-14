@@ -73,6 +73,7 @@ fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Salsa20 {
     counter: u64,
     block: [u32; 16],
