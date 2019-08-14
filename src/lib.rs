@@ -74,9 +74,28 @@ fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
 }
 
 #[derive(Clone, Copy)]
+struct Overflow {
+    buffer: [u8; 64],
+    offset: usize
+}
+
+impl Overflow {
+    fn new() -> Overflow {
+        Overflow { buffer: [0; 64], offset: 64 }
+    }
+
+    fn copy_to(&mut self, buffer: &mut [u8]) {
+        let offset = self.offset;
+        self.offset += buffer.len();
+        buffer[..].copy_from_slice(&self.buffer[offset..self.offset]);
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Salsa20 {
     counter: u64,
     block: [u32; 16],
+    overflow: Overflow 
 }
 
 impl Salsa20 {
@@ -85,6 +104,7 @@ impl Salsa20 {
         block[0] = 1634760805;
         block[15] = 1797285236;
         u8_to_u32(&nonce[..], &mut block[6..8]);
+        u8_to_u32(&counter.to_le_bytes(), &mut block[8..10]);
 
         match key.len() {
             16 => {
@@ -103,16 +123,39 @@ impl Salsa20 {
             }
         }
 
-        Salsa20 { block, counter }
+        Salsa20 { block, counter, overflow: Overflow::new() }
+    }
+
+    fn inc_counter(&mut self) {
+        self.counter.wrapping_add(1);
+        u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
     }
 
     pub fn generate(&mut self, buffer: &mut [u8]) {
-        assert_eq!(buffer.len() % 64, 0);
+        let buffer_len = buffer.len();
+        let overflow_len = 64 - self.overflow.offset;
 
-        for offset in (0..buffer.len()).step_by(64) {
-           u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
-           core(&self.block, &mut buffer[offset..offset + 64]);
-           self.counter += 1;
+        if overflow_len != 0 {
+            if buffer_len >= overflow_len {
+                self.overflow.copy_to(&mut buffer[..overflow_len]);
+            } else {
+                self.overflow.copy_to(&mut buffer[..]);
+                return;
+            }
+        }
+
+        let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
+
+        for offset in (overflow_len..last_offset).step_by(64) {
+            core(&self.block, &mut buffer[offset..offset + 64]);
+            self.inc_counter();
+        }
+
+        if last_offset != buffer_len {
+            core(&self.block, &mut self.overflow.buffer);
+            self.inc_counter();
+            self.overflow.offset = 0;
+            self.overflow.copy_to(&mut buffer[last_offset..]);
         }
     }
 }
@@ -239,6 +282,64 @@ mod tests {
         ];
 
         salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data.to_vec());
+    }
+
+    #[test]
+    fn generate_test_with_overflow_1() {
+        let key: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+        ];
+        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+
+        let mut buffer = [0; 10];
+        let expected_data: [[u8; 10]; 6] = [
+            [18, 151, 139, 216, 17, 224, 46, 71, 160, 193],
+            [230, 100, 172, 120, 246, 93, 95, 171, 234, 5],
+            [244, 163, 188, 198, 240, 72, 180, 58, 46, 87],
+            [13, 220, 178, 179, 195, 166, 65, 98, 167, 19],
+            [168, 221, 73, 21, 205, 93, 139, 97, 254, 29],
+            [39, 66, 14, 90, 123, 114, 195, 159, 46, 6]
+        ];
+
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[0].to_vec());
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[1].to_vec());
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[2].to_vec());
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[3].to_vec());
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[4].to_vec());
+        salsa20.generate(&mut buffer);
+        assert_eq!(buffer.to_vec(), expected_data[5].to_vec());
+    }
+
+    #[test]
+    fn generate_test_with_overflow_2() {
+        let key: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+        ];
+        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+
+        let mut salsa20_1 = Salsa20::new(&key, &nonce, 0);
+        let mut salsa20_2 = Salsa20::new(&key, &nonce, 0);
+
+        let mut buffer = [0; 1024];
+        let mut expected_data = [0; 1024];
+
+        salsa20_1.generate(&mut expected_data);
+
+        salsa20_2.generate(&mut buffer[0..100]);
+        salsa20_2.generate(&mut buffer[100..253]);
+        salsa20_2.generate(&mut buffer[253..578]);
+        salsa20_2.generate(&mut buffer[578..934]);
+        salsa20_2.generate(&mut buffer[934..1024]);
+
         assert_eq!(buffer.to_vec(), expected_data.to_vec());
     }
 }
