@@ -48,7 +48,7 @@ fn doubleround_10(data: [u32; 16]) -> [u32; 16] {
     y
 }
 
-fn core(data: &[u32; 16], hash: &mut[u8]) {
+fn core_generate(data: &[u32; 16], hash: &mut[u8]) {
     let data_copy = doubleround_10(data.clone());
 
     data.iter()
@@ -61,6 +61,19 @@ fn core(data: &[u32; 16], hash: &mut[u8]) {
         });
 }
 
+fn core_encrypt(data: &[u32; 16], hash: &mut[u8]) {
+    let data_copy = doubleround_10(data.clone());
+
+    data.iter()
+        .zip(data_copy.iter())
+        .enumerate()
+        .for_each(|(index, (value, &value_copy))| {
+            let offset = index * 4;
+            let sum = value.wrapping_add(value_copy); 
+            xor_from_slice(&mut hash[offset..offset + 4], &sum.to_le_bytes());
+        });
+}
+
 fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
     for (index, word) in buffer.iter_mut().enumerate() {
         let offset = index * 4;
@@ -70,6 +83,12 @@ fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
             value[offset + 2],
             value[offset + 3]
         ]);
+    }
+}
+
+fn xor_from_slice(to: &mut [u8], from: &[u8]) {
+    for (to_byte, from_byte) in to.iter_mut().zip(from.iter()) {
+        *to_byte ^= *from_byte;
     }
 }
 
@@ -88,6 +107,12 @@ impl Overflow {
         let offset = self.offset;
         self.offset += buffer.len();
         buffer[..].copy_from_slice(&self.buffer[offset..self.offset]);
+    }
+
+    fn xor_to(&mut self, buffer: &mut [u8]) {
+        let offset = self.offset;
+        self.offset += buffer.len();
+        xor_from_slice(&mut buffer[..], &self.buffer[offset..self.offset]);
     }
 }
 
@@ -147,22 +172,50 @@ impl Salsa20 {
         let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
 
         for offset in (overflow_len..last_offset).step_by(64) {
-            core(&self.block, &mut buffer[offset..offset + 64]);
+            core_generate(&self.block, &mut buffer[offset..offset + 64]);
             self.inc_counter();
         }
 
         if last_offset != buffer_len {
-            core(&self.block, &mut self.overflow.buffer);
+            core_generate(&self.block, &mut self.overflow.buffer);
             self.inc_counter();
             self.overflow.offset = 0;
             self.overflow.copy_to(&mut buffer[last_offset..]);
+        }
+    }
+
+    pub fn encrypt(&mut self, buffer: &mut [u8]) {
+        let buffer_len = buffer.len();
+        let overflow_len = 64 - self.overflow.offset;
+
+        if overflow_len != 0 {
+            if buffer_len >= overflow_len {
+                self.overflow.xor_to(&mut buffer[..overflow_len]);
+            } else {
+                self.overflow.xor_to(&mut buffer[..]);
+                return;
+            }
+        }
+
+        let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
+
+        for offset in (overflow_len..last_offset).step_by(64) {
+            core_encrypt(&self.block, &mut buffer[offset..offset + 64]);
+            self.inc_counter();
+        }
+
+        if last_offset != buffer_len {
+            core_encrypt(&self.block, &mut self.overflow.buffer);
+            self.inc_counter();
+            self.overflow.offset = 0;
+            self.overflow.xor_to(&mut buffer[last_offset..]);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{quarterround, doubleround, core, Salsa20};
+    use super::*;
 
     #[test]
     fn quarterround_test_dataset_1() {
@@ -220,7 +273,7 @@ mod tests {
         let expected_data = [0; 64];
         let mut hash_data = [0; 64];
 
-        core(&input_data, &mut hash_data);
+        core_generate(&input_data, &mut hash_data);
         assert_eq!(hash_data.to_vec(), expected_data.to_vec());
     }
 
@@ -238,7 +291,7 @@ mod tests {
 
         let mut hash_data = [0; 64];
 
-        core(&input_data, &mut hash_data);
+        core_generate(&input_data, &mut hash_data);
         assert_eq!(hash_data.to_vec(), expected_data.to_vec());
     }
 
