@@ -215,7 +215,7 @@ mod tests {
     } 
 
     #[test]
-    fn hash_test_dataset_1() {
+    fn core_test_dataset_1() {
         let input_data = [0; 16];
         let expected_data = [0; 64];
         let mut hash_data = [0; 64];
@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_test_dataset_2() {
+    fn core_test_dataset_2() {
         let input_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5]; 
 
         let expected_data = [
