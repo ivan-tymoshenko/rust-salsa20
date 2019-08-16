@@ -9,6 +9,7 @@ fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
     [y0, y1, y2, y3]
 }
 
+#[inline(always)]
 fn doubleround(y: [u32; 16]) -> [u32; 16] {
     // columnround
     let [
@@ -39,23 +40,13 @@ fn doubleround(y: [u32; 16]) -> [u32; 16] {
     [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
-#[inline(always)]
-fn doubleround_10(data: [u32; 16]) -> [u32; 16] {
-    let mut y = data;
-
-    for _ in 0..10 {
-        y = doubleround(y);
-    }
-    y
-}
-
 fn core<F>(data: &[u32; 16], result: &mut[u8], modifier: F)
     where F: Fn(&[u8], &mut [u8])
 {
-    let data_copy = doubleround_10(data.clone());
-
-    data.iter()
-        .zip(data_copy.iter())
+    (0..10)
+        .fold(data.clone(), |data, _| doubleround(data))
+        .iter()
+        .zip(data.iter())
         .enumerate()
         .for_each(|(index, (value, &value_copy))| {
             let offset = index * 4;
@@ -129,8 +120,8 @@ impl Salsa20 {
                 block[10] = 1885482294;
             }
             32 => {
-                u8_to_u32(&key[0..16], &mut block[1..5]);
-                u8_to_u32(&key[16..32], &mut block[11..15]);
+                u8_to_u32(&key[..16], &mut block[1..5]);
+                u8_to_u32(&key[16..], &mut block[11..15]);
                 block[5] = 824206446;
                 block[10] = 2036477238;
             } _ => {
