@@ -39,6 +39,7 @@ fn doubleround(y: [u32; 16]) -> [u32; 16] {
     [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
+#[inline(always)]
 fn doubleround_10(data: [u32; 16]) -> [u32; 16] {
     let mut y = data;
 
@@ -48,7 +49,9 @@ fn doubleround_10(data: [u32; 16]) -> [u32; 16] {
     y
 }
 
-fn core(data: &[u32; 16], hash: &mut[u8]) {
+fn core<F>(data: &[u32; 16], result: &mut[u8], modifier: F)
+    where F: Fn(&[u8], &mut [u8])
+{
     let data_copy = doubleround_10(data.clone());
 
     data.iter()
@@ -57,7 +60,7 @@ fn core(data: &[u32; 16], hash: &mut[u8]) {
         .for_each(|(index, (value, &value_copy))| {
             let offset = index * 4;
             let sum = value.wrapping_add(value_copy); 
-            hash[offset..offset + 4].copy_from_slice(&sum.to_le_bytes());
+            modifier(&sum.to_le_bytes(), &mut result[offset..offset + 4]);
         });
 }
 
@@ -73,6 +76,16 @@ fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
     }
 }
 
+fn xor_from_slice(from: &[u8], to: &mut [u8]) {
+    for (to_byte, from_byte) in to.iter_mut().zip(from.iter()) {
+        *to_byte ^= *from_byte;
+    }
+}
+
+fn copy_from_slice(from: &[u8], to: &mut [u8]) {
+    to.copy_from_slice(from);
+}
+
 #[derive(Clone, Copy)]
 struct Overflow {
     buffer: [u8; 64],
@@ -84,10 +97,12 @@ impl Overflow {
         Overflow { buffer: [0; 64], offset: 64 }
     }
 
-    fn copy_to(&mut self, buffer: &mut [u8]) {
+    fn modify<F>(&mut self, buffer: &mut [u8], modifier: F)
+        where F: Fn(&[u8], &mut [u8])
+    {
         let offset = self.offset;
         self.offset += buffer.len();
-        buffer[..].copy_from_slice(&self.buffer[offset..self.offset]);
+        modifier(&self.buffer[offset..self.offset], buffer);
     }
 }
 
@@ -130,16 +145,18 @@ impl Salsa20 {
         self.counter.wrapping_add(1);
         u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
     }
-
-    pub fn generate(&mut self, buffer: &mut [u8]) {
+    
+    fn modify<F>(&mut self, buffer: &mut [u8], modifier: &F)
+        where F: Fn(&[u8], &mut [u8])
+    {
         let buffer_len = buffer.len();
         let overflow_len = 64 - self.overflow.offset;
 
         if overflow_len != 0 {
             if buffer_len >= overflow_len {
-                self.overflow.copy_to(&mut buffer[..overflow_len]);
+                self.overflow.modify(&mut buffer[..overflow_len], modifier);
             } else {
-                self.overflow.copy_to(&mut buffer[..]);
+                self.overflow.modify(&mut buffer[..], modifier);
                 return;
             }
         }
@@ -147,22 +164,30 @@ impl Salsa20 {
         let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
 
         for offset in (overflow_len..last_offset).step_by(64) {
-            core(&self.block, &mut buffer[offset..offset + 64]);
+            core(&self.block, &mut buffer[offset..offset + 64], modifier);
             self.inc_counter();
         }
 
         if last_offset != buffer_len {
-            core(&self.block, &mut self.overflow.buffer);
+            core(&self.block, &mut self.overflow.buffer, modifier);
             self.inc_counter();
             self.overflow.offset = 0;
-            self.overflow.copy_to(&mut buffer[last_offset..]);
+            self.overflow.modify(&mut buffer[last_offset..], modifier);
         }
+    }
+
+    pub fn generate(&mut self, buffer: &mut [u8]) {
+        self.modify(buffer, &copy_from_slice);
+    }
+    
+    pub fn encrypt(&mut self, buffer: &mut [u8]) {
+        self.modify(buffer, &xor_from_slice);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{quarterround, doubleround, core, Salsa20};
+    use super::*;
 
     #[test]
     fn quarterround_test_dataset_1() {
@@ -215,17 +240,17 @@ mod tests {
     } 
 
     #[test]
-    fn core_test_dataset_1() {
+    fn core_generate_test_dataset_1() {
         let input_data = [0; 16];
         let expected_data = [0; 64];
-        let mut hash_data = [0; 64];
+        let mut generate_data = [0; 64];
 
-        core(&input_data, &mut hash_data);
-        assert_eq!(hash_data.to_vec(), expected_data.to_vec());
+        core(&input_data, &mut generate_data, &copy_from_slice);
+        assert_eq!(generate_data.to_vec(), expected_data.to_vec());
     }
 
     #[test]
-    fn core_test_dataset_2() {
+    fn core_generate_test_dataset_2() {
         let input_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5]; 
 
         let expected_data = [
@@ -236,20 +261,58 @@ mod tests {
             190, 196, 68, 81, 49, 214, 34, 251
         ];
 
-        let mut hash_data = [0; 64];
+        let mut generate_data = [0; 64];
 
-        core(&input_data, &mut hash_data);
-        assert_eq!(hash_data.to_vec(), expected_data.to_vec());
+        core(&input_data, &mut generate_data, &copy_from_slice);
+        assert_eq!(generate_data.to_vec(), expected_data.to_vec());
+    }
+    
+    #[test]
+    fn core_encrypt_test_dataset_1() {
+        let input_data = [0; 16];
+        let expected_data = [0; 64];
+        let mut encrypt_data = [0; 64];
+
+        core(&input_data, &mut encrypt_data, &xor_from_slice);
+        assert_eq!(encrypt_data.to_vec(), expected_data.to_vec());
+    }
+
+    #[test]
+    fn core_encrypt_test_dataset_2() {
+        let input_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5]; 
+
+        let expected_data = [
+            126, 191, 242, 214, 28, 99, 53, 192, 20, 189, 118, 255, 17, 166,
+            113, 155, 7, 233, 204, 232, 242, 81, 195, 141, 126, 10, 195, 61,
+            52, 213, 22, 43, 251, 126, 135, 72, 255, 32, 120, 160, 109, 131,
+            65, 61, 54, 196, 78, 89, 22, 154, 193, 202, 233, 168, 109, 95,
+            191, 197, 69, 80, 48, 215, 35, 250
+        ];
+
+        let mut encrypt_data = [1; 64];
+
+        core(&input_data, &mut encrypt_data, &xor_from_slice);
+        assert_eq!(encrypt_data.to_vec(), expected_data.to_vec());
+    }
+
+    fn create_salsa20(key_size: u8) -> Salsa20 {
+        let key_16 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let key_32 = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+        ];
+
+        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+
+        match key_size {
+            16 => Salsa20::new(&key_16, &nonce, 0),
+            _ => Salsa20::new(&key_32, &nonce, 0)
+        }
     }
 
     #[test]
     fn generate_test_key_32() {
-        let key: [u8; 32] = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
-        ];
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+        let mut salsa20 = create_salsa20(32);
 
         let mut buffer = [0; 64];
         let expected_data = [
@@ -340,6 +403,27 @@ mod tests {
         salsa20_2.generate(&mut buffer[578..934]);
         salsa20_2.generate(&mut buffer[934..1024]);
 
+        assert_eq!(buffer.to_vec(), expected_data.to_vec());
+    }
+
+    #[test]
+    fn encrypt_test_dataset_1() {
+        let key: [u8; 16] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        ];
+        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+
+        let mut buffer = [7; 64];
+        let expected_data = [
+            53, 217, 166, 104, 28, 62, 3, 36, 62, 164, 173, 52, 186, 72, 109,
+            101, 35, 243, 223, 217, 59, 43, 85, 63, 181, 23, 183, 50, 79, 118,
+            213, 219, 122, 72, 169, 177, 253, 144, 107, 120, 229, 135, 35, 95,
+            27, 218, 223, 75, 73, 229, 73, 14, 44, 253, 89, 153, 107, 112, 250,
+            35, 17, 38, 13, 156
+        ];
+
+        salsa20.encrypt(&mut buffer);
         assert_eq!(buffer.to_vec(), expected_data.to_vec());
     }
 }
