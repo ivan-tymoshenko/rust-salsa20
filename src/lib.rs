@@ -9,9 +9,7 @@ fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
     [y0, y1, y2, y3]
 }
 
-#[inline(always)]
-fn doubleround(y: [u32; 16]) -> [u32; 16] {
-    // columnround
+fn columnround(y: [u32; 16]) -> [u32; 16] {
     let [
         [z0, z4, z8, z12],
         [z5, z9, z13, z1],
@@ -24,35 +22,28 @@ fn doubleround(y: [u32; 16]) -> [u32; 16] {
         quarterround(y[15], y[3], y[7], y[11]),
     ];
     
-    // rowround
+    [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
+}
+
+fn rowround(y: [u32; 16]) -> [u32; 16] {
     let [
         [z0, z1, z2, z3],
         [z5, z6, z7, z4],
         [z10, z11, z8, z9],
         [z15, z12, z13, z14]
     ] = [
-        quarterround(z0, z1, z2, z3),
-        quarterround(z5, z6, z7, z4),
-        quarterround(z10, z11, z8, z9),
-        quarterround(z15, z12, z13, z14)
+        quarterround(y[0], y[1], y[2], y[3]),
+        quarterround(y[5], y[6], y[7], y[4]),
+        quarterround(y[10], y[11], y[8], y[9]),
+        quarterround(y[15], y[12], y[13], y[14])
     ];
 
     [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
-fn core<F>(data: &[u32; 16], result: &mut[u8], modifier: F)
-    where F: Fn(&[u8], &mut [u8])
-{
-    (0..10)
-        .fold(data.clone(), |data, _| doubleround(data))
-        .iter()
-        .zip(data.iter())
-        .enumerate()
-        .for_each(|(index, (value, &value_copy))| {
-            let offset = index * 4;
-            let sum = value.wrapping_add(value_copy); 
-            modifier(&sum.to_le_bytes(), &mut result[offset..offset + 4]);
-        });
+#[inline(always)]
+fn doubleround(y: [u32; 16]) -> [u32; 16] {
+    rowround(columnround(y))
 }
 
 fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
@@ -98,45 +89,119 @@ impl Overflow {
 }
 
 #[derive(Clone, Copy)]
-pub struct Salsa20 {
-    counter: u64,
-    block: [u32; 16],
-    overflow: Overflow 
+struct Generator {
+    y: [u32; 16],
+    z: [u32; 16],
+    r: [u32; 4],
+    counter: u64
 }
 
-impl Salsa20 {
-    pub fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
-        let mut block = [0; 16];
-        block[0] = 1634760805;
-        block[15] = 1797285236;
-        u8_to_u32(&nonce[..], &mut block[6..8]);
-        u8_to_u32(&counter.to_le_bytes(), &mut block[8..10]);
+impl Generator {
+    fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Generator {
+        let mut y = [0; 16];
+        y[0] = 1634760805;
+        y[15] = 1797285236;
+        y[8] = counter as u32;
+        y[9] = (counter >> 32) as u32;
+        u8_to_u32(&nonce[..], &mut y[6..8]);
 
         match key.len() {
             16 => {
-                u8_to_u32(&key[..], &mut block[1..5]);
-                u8_to_u32(&key[..], &mut block[11..15]);
-                block[5] = 824206446;
-                block[10] = 1885482294;
+                u8_to_u32(&key[..], &mut y[1..5]);
+                u8_to_u32(&key[..], &mut y[11..15]);
+                y[5] = 824206446;
+                y[10] = 1885482294;
             }
             32 => {
-                u8_to_u32(&key[..16], &mut block[1..5]);
-                u8_to_u32(&key[16..], &mut block[11..15]);
-                block[5] = 824206446;
-                block[10] = 2036477238;
+                u8_to_u32(&key[..16], &mut y[1..5]);
+                u8_to_u32(&key[16..], &mut y[11..15]);
+                y[5] = 824206446;
+                y[10] = 2036477238;
             } _ => {
                 panic!("Wrong key size.");
             }
         }
+        let z = columnround(y);
+        let r = quarterround(z[5], z[6], z[7], z[4]);
 
-        Salsa20 { block, counter, overflow: Overflow::new() }
+        Generator { y, z, r, counter }
     }
 
-    fn inc_counter(&mut self) {
-        self.counter = self.counter.wrapping_add(1);
-        u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
+    fn first_doubleround(&self) -> [u32; 16] {
+        let [r5, r6, r7, r4] = self.r;
+        let [
+            [r0, r1, r2, r3],
+            [r10, r11, r8, r9],
+            [r15, r12, r13, r14]
+        ] = [
+            quarterround(self.z[0], self.z[1], self.z[2], self.z[3]),
+            quarterround(self.z[10], self.z[11], self.z[8], self.z[9]),
+            quarterround(self.z[15], self.z[12], self.z[13], self.z[14])
+        ];
+ 
+        [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15]
     }
-    
+
+    fn set_counter(&mut self, counter: u64) {
+        self.counter = counter;
+        self.y[8] = counter as u32;
+        let [z0, z4, z8, z12] = quarterround(
+            self.y[0],
+            self.y[4],
+            self.y[8],
+            self.y[12]
+        );
+        self.z[0] = z0;
+        self.z[8] = z8;
+        self.z[12] = z12;
+
+        if counter > 0xffffffff_u64 {
+            self.y[9] = (counter >> 32) as u32;
+            let [z5, z9, z13, z1] = quarterround(
+                self.y[1],
+                self.y[5],
+                self.y[9],
+                self.y[13]
+            );
+            self.z[1] = z1;
+            self.z[9] = z9;
+            self.z[13] = z13;
+
+            self.r = quarterround(z5, self.z[6], self.z[7], z4);
+        }
+    }
+
+    fn generate<F>(&mut self, result: &mut[u8], modifier: F)
+        where F: Fn(&[u8], &mut [u8])
+    {
+        (0..9)
+            .fold(self.first_doubleround(), |block, _| doubleround(block))
+            .iter()
+            .zip(self.y.iter())
+            .enumerate()
+            .for_each(|(index, (value, &value_copy))| {
+                let offset = index * 4;
+                let sum = value.wrapping_add(value_copy); 
+                modifier(&sum.to_le_bytes(), &mut result[offset..offset + 4]);
+            });
+
+        self.set_counter(self.counter.wrapping_add(1));
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Salsa20 {
+    generator: Generator,
+    overflow: Overflow
+}
+
+impl Salsa20 {
+    pub fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
+        let overflow = Overflow::new();
+        let generator = Generator::new(key, nonce, counter);
+        Salsa20 { generator, overflow }
+    }
+
     fn modify<F>(&mut self, buffer: &mut [u8], modifier: &F)
         where F: Fn(&[u8], &mut [u8])
     {
@@ -155,13 +220,11 @@ impl Salsa20 {
         let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
 
         for offset in (overflow_len..last_offset).step_by(64) {
-            core(&self.block, &mut buffer[offset..offset + 64], modifier);
-            self.inc_counter();
+            self.generator.generate(&mut buffer[offset..offset + 64], modifier);
         }
 
         if last_offset != buffer_len {
-            core(&self.block, &mut self.overflow.buffer, modifier);
-            self.inc_counter();
+            self.generator.generate(&mut self.overflow.buffer, copy_from_slice);
             self.overflow.offset = 0;
             self.overflow.modify(&mut buffer[last_offset..], modifier);
         }
@@ -229,62 +292,6 @@ mod tests {
 
         assert_eq!(doubleround(input_data), expected_data);
     } 
-
-    #[test]
-    fn core_generate_test_dataset_1() {
-        let input_data = [0; 16];
-        let expected_data = [0; 64];
-        let mut generate_data = [0; 64];
-
-        core(&input_data, &mut generate_data, &copy_from_slice);
-        assert_eq!(generate_data.to_vec(), expected_data.to_vec());
-    }
-
-    #[test]
-    fn core_generate_test_dataset_2() {
-        let input_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5]; 
-
-        let expected_data = [
-            127, 190, 243, 215, 29, 98, 52, 193, 21, 188, 119, 254, 16, 167,
-            112, 154, 6, 232, 205, 233, 243, 80, 194, 140, 127, 11, 194, 60,
-            53, 212, 23, 42, 250, 127, 134, 73, 254, 33, 121, 161, 108, 130,
-            64, 60, 55, 197, 79, 88, 23, 155, 192, 203, 232, 169, 108, 94,
-            190, 196, 68, 81, 49, 214, 34, 251
-        ];
-
-        let mut generate_data = [0; 64];
-
-        core(&input_data, &mut generate_data, &copy_from_slice);
-        assert_eq!(generate_data.to_vec(), expected_data.to_vec());
-    }
-    
-    #[test]
-    fn core_encrypt_test_dataset_1() {
-        let input_data = [0; 16];
-        let expected_data = [0; 64];
-        let mut encrypt_data = [0; 64];
-
-        core(&input_data, &mut encrypt_data, &xor_from_slice);
-        assert_eq!(encrypt_data.to_vec(), expected_data.to_vec());
-    }
-
-    #[test]
-    fn core_encrypt_test_dataset_2() {
-        let input_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5]; 
-
-        let expected_data = [
-            126, 191, 242, 214, 28, 99, 53, 192, 20, 189, 118, 255, 17, 166,
-            113, 155, 7, 233, 204, 232, 242, 81, 195, 141, 126, 10, 195, 61,
-            52, 213, 22, 43, 251, 126, 135, 72, 255, 32, 120, 160, 109, 131,
-            65, 61, 54, 196, 78, 89, 22, 154, 193, 202, 233, 168, 109, 95,
-            191, 197, 69, 80, 48, 215, 35, 250
-        ];
-
-        let mut encrypt_data = [1; 64];
-
-        core(&input_data, &mut encrypt_data, &xor_from_slice);
-        assert_eq!(encrypt_data.to_vec(), expected_data.to_vec());
-    }
 
     fn create_salsa20(key_size: u8) -> Salsa20 {
         let key_16 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
