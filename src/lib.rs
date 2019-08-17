@@ -133,7 +133,7 @@ impl Salsa20 {
     }
 
     fn inc_counter(&mut self) {
-        self.counter.wrapping_add(1);
+        self.counter = self.counter.wrapping_add(1);
         u8_to_u32(&self.counter.to_le_bytes(), &mut self.block[8..10]);
     }
     
