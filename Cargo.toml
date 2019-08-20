@@ -1,8 +1,11 @@
 [package]
-name = "salsa20"
+name = "rust-salsa20"
 version = "0.1.0"
 authors = ["bugagashenkj <bugagashenkj@gmail.com>"]
 edition = "2018"
+license = "MIT"
+repository = "https://github.com/bugagashenkj/salsa20"
+description = "Fast implementation of salsa20 in safe rust with supporting embedded systems"
 
 [dev-dependencies]
 criterion = "0.2"
