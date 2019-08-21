@@ -1,7 +1,7 @@
 extern crate criterion;
-extern crate salsa20;
+extern crate rust_salsa20;
 
-use salsa20::Salsa20;
+use rust_salsa20::Salsa20;
 use criterion::*;
 
 fn encrypt_1_kb(c: &mut Criterion) {
