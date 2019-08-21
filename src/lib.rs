@@ -230,6 +230,10 @@ impl Salsa20 {
         }
     }
 
+    pub fn set_counter(&mut self, counter: u64) {
+        self.generator.set_counter(counter);
+    }
+
     pub fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &copy_from_slice);
     }
