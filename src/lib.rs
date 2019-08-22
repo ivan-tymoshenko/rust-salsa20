@@ -58,14 +58,10 @@ fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
     }
 }
 
-fn xor_from_slice(from: &[u8], to: &mut [u8]) {
+fn xor_from_slice(to: &mut[u8], from: &[u8]) {
     for (to_byte, from_byte) in to.iter_mut().zip(from.iter()) {
-        *to_byte ^= *from_byte;
+        *to_byte ^= from_byte;
     }
-}
-
-fn copy_from_slice(from: &[u8], to: &mut [u8]) {
-    to.copy_from_slice(from);
 }
 
 #[derive(Clone, Copy)]
@@ -80,11 +76,11 @@ impl Overflow {
     }
 
     fn modify<F>(&mut self, buffer: &mut [u8], modifier: F)
-        where F: Fn(&[u8], &mut [u8])
+        where F: Fn(&mut [u8], &[u8])
     {
         let offset = self.offset;
         self.offset += buffer.len();
-        modifier(&self.buffer[offset..self.offset], buffer);
+        modifier(buffer, &self.buffer[offset..self.offset]);
     }
 }
 
@@ -172,7 +168,7 @@ impl Generator {
     }
 
     fn generate<F>(&mut self, result: &mut[u8], modifier: F)
-        where F: Fn(&[u8], &mut [u8])
+        where F: Fn(&mut [u8], &[u8])
     {
         (0..9)
             .fold(self.first_doubleround(), |block, _| doubleround(block))
@@ -182,7 +178,7 @@ impl Generator {
             .for_each(|(index, (value, &value_copy))| {
                 let offset = index * 4;
                 let sum = value.wrapping_add(value_copy); 
-                modifier(&sum.to_le_bytes(), &mut result[offset..offset + 4]);
+                modifier(&mut result[offset..offset + 4], &sum.to_le_bytes());
             });
 
         self.set_counter(self.counter.wrapping_add(1));
@@ -203,7 +199,7 @@ impl Salsa20 {
     }
 
     fn modify<F>(&mut self, buffer: &mut [u8], modifier: &F)
-        where F: Fn(&[u8], &mut [u8])
+        where F: Fn(&mut [u8], &[u8])
     {
         let buffer_len = buffer.len();
         let overflow_len = 64 - self.overflow.offset;
@@ -224,7 +220,10 @@ impl Salsa20 {
         }
 
         if last_offset != buffer_len {
-            self.generator.generate(&mut self.overflow.buffer, copy_from_slice);
+            self.generator.generate(
+                &mut self.overflow.buffer,
+                <[u8]>::copy_from_slice
+            );
             self.overflow.offset = 0;
             self.overflow.modify(&mut buffer[last_offset..], modifier);
         }
@@ -235,7 +234,7 @@ impl Salsa20 {
     }
 
     pub fn generate(&mut self, buffer: &mut [u8]) {
-        self.modify(buffer, &copy_from_slice);
+        self.modify(buffer, &<[u8]>::copy_from_slice);
     }
     
     pub fn encrypt(&mut self, buffer: &mut [u8]) {
