@@ -21,7 +21,7 @@ fn columnround(y: [u32; 16]) -> [u32; 16] {
         quarterround(y[10], y[14], y[2], y[6]),
         quarterround(y[15], y[3], y[7], y[11]),
     ];
-    
+
     [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
@@ -106,13 +106,13 @@ impl Generator {
                 u8_to_u32(&key[..], &mut y[1..5]);
                 u8_to_u32(&key[..], &mut y[11..15]);
                 y[5] = 824206446;
-                y[10] = 1885482294;
+                y[10] = 2036477238;
             }
             32 => {
                 u8_to_u32(&key[..16], &mut y[1..5]);
                 u8_to_u32(&key[16..], &mut y[11..15]);
-                y[5] = 824206446;
-                y[10] = 2036477238;
+                y[5] = 857760878;
+                y[10] = 2036477234;
             } _ => {
                 panic!("Wrong key size.");
             }
@@ -134,7 +134,7 @@ impl Generator {
             quarterround(self.z[10], self.z[11], self.z[8], self.z[9]),
             quarterround(self.z[15], self.z[12], self.z[13], self.z[14])
         ];
- 
+
         [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15]
     }
 
@@ -154,10 +154,10 @@ impl Generator {
         if counter > 0xffffffff_u64 {
             self.y[9] = (counter >> 32) as u32;
             let [z5, z9, z13, z1] = quarterround(
-                self.y[1],
                 self.y[5],
                 self.y[9],
-                self.y[13]
+                self.y[13],
+                self.y[1]
             );
             self.z[1] = z1;
             self.z[9] = z9;
@@ -177,7 +177,7 @@ impl Generator {
             .enumerate()
             .for_each(|(index, (value, &value_copy))| {
                 let offset = index * 4;
-                let sum = value.wrapping_add(value_copy); 
+                let sum = value.wrapping_add(value_copy);
                 modifier(&mut result[offset..offset + 4], &sum.to_le_bytes());
             });
 
@@ -213,7 +213,7 @@ impl Salsa20 {
             }
         }
 
-        let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
+        let last_offset = buffer_len - (buffer_len - overflow_len) % 64;
 
         for offset in (overflow_len..last_offset).step_by(64) {
             self.generator.generate(&mut buffer[offset..offset + 64], modifier);
@@ -236,7 +236,7 @@ impl Salsa20 {
     pub fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &<[u8]>::copy_from_slice);
     }
-    
+
     pub fn encrypt(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &xor_from_slice);
     }
@@ -294,7 +294,7 @@ mod tests {
         ];
 
         assert_eq!(doubleround(input_data), expected_data);
-    } 
+    }
 
     fn create_salsa20(key_size: u8) -> Salsa20 {
         let key_16 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
