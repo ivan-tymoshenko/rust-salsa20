@@ -21,7 +21,7 @@ fn columnround(y: [u32; 16]) -> [u32; 16] {
         quarterround(y[10], y[14], y[2], y[6]),
         quarterround(y[15], y[3], y[7], y[11]),
     ];
-    
+
     [z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12, z13, z14, z15]
 }
 
@@ -106,13 +106,13 @@ impl Generator {
                 u8_to_u32(&key[..], &mut y[1..5]);
                 u8_to_u32(&key[..], &mut y[11..15]);
                 y[5] = 824206446;
-                y[10] = 1885482294;
+                y[10] = 2036477238;
             }
             32 => {
                 u8_to_u32(&key[..16], &mut y[1..5]);
                 u8_to_u32(&key[16..], &mut y[11..15]);
-                y[5] = 824206446;
-                y[10] = 2036477238;
+                y[5] = 857760878;
+                y[10] = 2036477234;
             } _ => {
                 panic!("Wrong key size.");
             }
@@ -134,7 +134,7 @@ impl Generator {
             quarterround(self.z[10], self.z[11], self.z[8], self.z[9]),
             quarterround(self.z[15], self.z[12], self.z[13], self.z[14])
         ];
- 
+
         [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15]
     }
 
@@ -154,11 +154,12 @@ impl Generator {
         if counter > 0xffffffff_u64 {
             self.y[9] = (counter >> 32) as u32;
             let [z5, z9, z13, z1] = quarterround(
-                self.y[1],
                 self.y[5],
                 self.y[9],
-                self.y[13]
+                self.y[13],
+                self.y[1]
             );
+
             self.z[1] = z1;
             self.z[9] = z9;
             self.z[13] = z13;
@@ -177,7 +178,7 @@ impl Generator {
             .enumerate()
             .for_each(|(index, (value, &value_copy))| {
                 let offset = index * 4;
-                let sum = value.wrapping_add(value_copy); 
+                let sum = value.wrapping_add(value_copy);
                 modifier(&mut result[offset..offset + 4], &sum.to_le_bytes());
             });
 
@@ -213,7 +214,7 @@ impl Salsa20 {
             }
         }
 
-        let last_offset = buffer_len - (buffer_len - overflow_len) % 64; 
+        let last_offset = buffer_len - (buffer_len - overflow_len) % 64;
 
         for offset in (overflow_len..last_offset).step_by(64) {
             self.generator.generate(&mut buffer[offset..offset + 64], modifier);
@@ -236,7 +237,7 @@ impl Salsa20 {
     pub fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &<[u8]>::copy_from_slice);
     }
-    
+
     pub fn encrypt(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &xor_from_slice);
     }
@@ -247,7 +248,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quarterround_test_dataset_1() {
+    fn quarterround_test() {
         assert_eq!(
             quarterround(0x00000000, 0x00000000, 0x00000000, 0x00000000),
             [0x00000000, 0x00000000, 0x00000000, 0x00000000]
@@ -259,172 +260,300 @@ mod tests {
     }
 
     #[test]
-    fn doubleround_test_dataset_1() {
-        let input_data = [
+    fn rowround_test() {
+        test([
             0x00000001, 0x00000000, 0x00000000, 0x00000000,
-            0x00000000, 0x00000000, 0x00000000, 0x00000000,
-            0x00000000, 0x00000000, 0x00000000, 0x00000000,
-            0x00000000, 0x00000000, 0x00000000, 0x00000000
-        ];
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000001, 0x00000000, 0x00000000, 0x00000000
+        ], [
+            0x08008145, 0x00000080, 0x00010200, 0x20500000,
+            0x20100001, 0x00048044, 0x00000080, 0x00010000,
+            0x00000001, 0x00002000, 0x80040000, 0x00000000,
+            0x00000001, 0x00000200, 0x00402000, 0x88000100
+        ]);
 
-        let expected_data = [
-            0x8186a22d, 0x0040a284, 0x82479210, 0x06929051,
-            0x08000090, 0x02402200, 0x00004000, 0x00800000,
-            0x00010200, 0x20400000, 0x08008104, 0x00000000,
-            0x20500000, 0xa0000040, 0x0008180a, 0x612a8020
-        ];
+        test([
+             0x08521bd6, 0x1fe88837, 0xbb2aa576, 0x3aa26365,
+             0xc54c6a5b, 0x2fc74c2f, 0x6dd39cc3, 0xda0a64f6,
+             0x90a2f23d, 0x067f95a6, 0x06b35f61, 0x41e4732e,
+             0xe859c100, 0xea4d84b7, 0x0f619bff, 0xbc6e965a
+        ], [
+            0xa890d39d, 0x65d71596, 0xe9487daa, 0xc8ca6a86,
+            0x949d2192, 0x764b7754, 0xe408d9b9, 0x7a41b4d1,
+            0x3402e183, 0x3c3af432, 0x50669f96, 0xd89ef0a8,
+            0x0040ede5, 0xb545fbce, 0xd257ed4f, 0x1818882d
+        ]);
 
-        assert_eq!(doubleround(input_data), expected_data);
-    }
-
-    #[test]
-    fn doubleround_test_dataset_2() {
-        let input_data = [
-            0xde501066, 0x6f9eb8f7, 0xe4fbbd9b, 0x454e3f57,
-            0xb75540d3, 0x43e93a4c, 0x3a6f2aa0, 0x726d6b36,
-            0x9243f484, 0x9145d1e8, 0x4fa9d247, 0xdc8dee11,
-            0x054bf545, 0x254dd653, 0xd9421b6d, 0x67b276c1
-        ];
-
-        let expected_data = [
-            0xccaaf672, 0x23d960f7, 0x9153e63a, 0xcd9a60d0,
-            0x50440492, 0xf07cad19, 0xae344aa0, 0xdf4cfdfc,
-            0xca531c29, 0x8e7943db, 0xac1680cd, 0xd503ca00,
-            0xa74b2ad6, 0xbc331c5c, 0x1dda24c7, 0xee928277
-        ];
-
-        assert_eq!(doubleround(input_data), expected_data);
-    } 
-
-    fn create_salsa20(key_size: u8) -> Salsa20 {
-        let key_16 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let key_32 = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
-        ];
-
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-
-        match key_size {
-            16 => Salsa20::new(&key_16, &nonce, 0),
-            _ => Salsa20::new(&key_32, &nonce, 0)
+        fn test(input_data: [u32; 16], expected_data: [u32; 16]) {
+            assert_eq!(rowround(input_data), expected_data);
         }
     }
 
     #[test]
-    fn generate_test_key_32() {
-        let mut salsa20 = create_salsa20(32);
+    fn columnround_test() {
+        test([
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000001, 0x00000000, 0x00000000, 0x00000000
+        ], [
+            0x10090288, 0x00000000, 0x00000000, 0x00000000,
+            0x00000101, 0x00000000, 0x00000000, 0x00000000,
+            0x00020401, 0x00000000, 0x00000000, 0x00000000,
+            0x40a04001, 0x00000000, 0x00000000, 0x00000000
+        ]);
 
-        let mut buffer = [0; 64];
-        let expected_data = [
-            18, 151, 139, 216, 17, 224, 46, 71, 160, 193, 230, 100, 172, 120,
-            246, 93, 95, 171, 234, 5, 244, 163, 188, 198, 240, 72, 180, 58,
-            46, 87, 13, 220, 178, 179, 195, 166, 65, 98, 167, 19, 168, 221,
-            73, 21, 205, 93, 139, 97, 254, 29, 39, 66, 14, 90, 123, 114, 195,
-            159, 46, 6, 177, 250, 152, 39
-        ];
+        test([
+            0x08521bd6, 0x1fe88837, 0xbb2aa576, 0x3aa26365,
+            0xc54c6a5b, 0x2fc74c2f, 0x6dd39cc3, 0xda0a64f6,
+            0x90a2f23d, 0x067f95a6, 0x06b35f61, 0x41e4732e,
+            0xe859c100, 0xea4d84b7, 0x0f619bff, 0xbc6e965a
+        ], [
+            0x8c9d190a, 0xce8e4c90, 0x1ef8e9d3, 0x1326a71a,
+            0x90a20123, 0xead3c4f3, 0x63a091a0, 0xf0708d69,
+            0x789b010c, 0xd195a681, 0xeb7d5504, 0xa774135c,
+            0x481c2027, 0x53a8e4b5, 0x4c1f89c5, 0x3f78c9c8
+        ]);
 
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        fn test(input_data: [u32; 16], expected_data: [u32; 16]) {
+            assert_eq!(columnround(input_data), expected_data);
+        }
     }
 
     #[test]
-    fn generate_test_key_16() {
-        let key: [u8; 16] = [
+    fn doubleround_test() {
+        test([
+            0x00000001, 0x00000000, 0x00000000, 0x00000000,
+            0x00000000, 0x00000000, 0x00000000, 0x00000000,
+            0x00000000, 0x00000000, 0x00000000, 0x00000000,
+            0x00000000, 0x00000000, 0x00000000, 0x00000000
+        ], [
+            0x8186a22d, 0x0040a284, 0x82479210, 0x06929051,
+            0x08000090, 0x02402200, 0x00004000, 0x00800000,
+            0x00010200, 0x20400000, 0x08008104, 0x00000000,
+            0x20500000, 0xa0000040, 0x0008180a, 0x612a8020
+        ]);
+
+        test([
+            0xde501066, 0x6f9eb8f7, 0xe4fbbd9b, 0x454e3f57,
+            0xb75540d3, 0x43e93a4c, 0x3a6f2aa0, 0x726d6b36,
+            0x9243f484, 0x9145d1e8, 0x4fa9d247, 0xdc8dee11,
+            0x054bf545, 0x254dd653, 0xd9421b6d, 0x67b276c1
+        ], [
+            0xccaaf672, 0x23d960f7, 0x9153e63a, 0xcd9a60d0,
+            0x50440492, 0xf07cad19, 0xae344aa0, 0xdf4cfdfc,
+            0xca531c29, 0x8e7943db, 0xac1680cd, 0xd503ca00,
+            0xa74b2ad6, 0xbc331c5c, 0x1dda24c7, 0xee928277
+        ]);
+
+        fn test(input_data: [u32; 16], expected_data: [u32; 16]) {
+            assert_eq!(doubleround(input_data), expected_data);
+        }
+    }
+
+    #[test]
+    fn create_init_block_test() {
+        test(&[
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-        ];
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+        ], [
+            101, 120, 112, 97, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+            15, 16, 110, 100, 32, 49, 101, 102, 103, 104, 105, 106, 107, 108,
+            109, 110, 111, 112, 113, 114, 115, 116, 54, 45, 98, 121, 1, 2, 3,
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 116, 101, 32, 107
+        ]);
 
-        let mut buffer = [0; 64];
-        let expected_data = [
-            50, 222, 161, 111, 27, 57, 4, 35, 57, 163, 170, 51, 189, 79, 106,
-            98, 36, 244, 216, 222, 60, 44, 82, 56, 178, 16, 176, 53, 72, 113,
-            210, 220, 125, 79, 174, 182, 250, 151, 108, 127, 226, 128, 36, 88,
-            28, 221, 216, 76, 78, 226, 78, 9, 43, 250, 94, 158, 108, 119, 253,
-            36, 22, 33, 10, 155
-        ];
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
+        ], [
+            101, 120, 112, 97, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+            15, 16, 110, 100, 32, 51, 101, 102, 103, 104, 105, 106, 107, 108,
+            109, 110, 111, 112, 113, 114, 115, 116, 50, 45, 98, 121, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,
+            216, 116, 101, 32, 107
+        ]);
 
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        fn test(key: &[u8], expected_data: [u8; 64]) {
+            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+            let counter = u64::from_le_bytes(
+                [109, 110, 111, 112, 113, 114, 115, 116]
+            );
+            let generator = Generator::new(&key, &nonce, counter);
+
+            let mut expected_data_u32 = [0; 16];
+            u8_to_u32(&expected_data, &mut expected_data_u32);
+            assert_eq!(generator.y, expected_data_u32);
+        }
     }
 
     #[test]
-    fn generate_test_with_overflow_1() {
-        let key: [u8; 32] = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
-        ];
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+    fn first_doubleround_test() {
+        test(0x00000000, [0x00000000, 0x00000000]);
+        test(0x00000001, [0x00000001, 0x00000000]);
+        test(0x1234567f, [0x1234567f, 0x00000000]);
+        test(0xffffffff, [0xffffffff, 0x00000000]);
+        test(0x100000000, [0x00000000, 0x00000001]);
+        test(0x012345678abcdef, [0x78abcdef, 0x123456]);
 
-        let mut buffer = [0; 10];
-        let expected_data: [[u8; 10]; 6] = [
-            [18, 151, 139, 216, 17, 224, 46, 71, 160, 193],
-            [230, 100, 172, 120, 246, 93, 95, 171, 234, 5],
-            [244, 163, 188, 198, 240, 72, 180, 58, 46, 87],
-            [13, 220, 178, 179, 195, 166, 65, 98, 167, 19],
-            [168, 221, 73, 21, 205, 93, 139, 97, 254, 29],
-            [39, 66, 14, 90, 123, 114, 195, 159, 46, 6]
-        ];
-
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[0].to_vec());
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[1].to_vec());
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[2].to_vec());
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[3].to_vec());
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[4].to_vec());
-        salsa20.generate(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data[5].to_vec());
+        fn test(counter: u64, counter_as_u32: [u32; 2]) {
+            let mut generator = Generator::new(&[0; 16], &[0; 8], 0);
+            generator.set_counter(counter);
+            assert_eq!(generator.y[8..10], counter_as_u32);
+            assert_eq!(
+                generator.first_doubleround(),
+                doubleround(generator.y)
+            );
+        };
     }
 
     #[test]
-    fn generate_test_with_overflow_2() {
-        let key: [u8; 32] = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
-        ];
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-
-        let mut salsa20_1 = Salsa20::new(&key, &nonce, 0);
-        let mut salsa20_2 = Salsa20::new(&key, &nonce, 0);
-
-        let mut buffer = [0; 1024];
-        let mut expected_data = [0; 1024];
-
-        salsa20_1.generate(&mut expected_data);
-
-        salsa20_2.generate(&mut buffer[0..100]);
-        salsa20_2.generate(&mut buffer[100..253]);
-        salsa20_2.generate(&mut buffer[253..578]);
-        salsa20_2.generate(&mut buffer[578..934]);
-        salsa20_2.generate(&mut buffer[934..1024]);
-
-        assert_eq!(buffer.to_vec(), expected_data.to_vec());
-    }
-
-    #[test]
-    fn encrypt_test_dataset_1() {
-        let key: [u8; 16] = [
+    fn generate_test() {
+        test(&[
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-        ];
-        let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-        let mut salsa20 = Salsa20::new(&key, &nonce, 0);
+        ], [
+            39, 173, 46, 248, 30, 200, 82, 17, 48, 67, 254, 239, 37, 18, 13,
+            247, 241, 200, 61, 144, 10, 55, 50, 185, 6, 47, 246, 253, 143, 86,
+            187, 225, 134, 85, 110, 246, 161, 163, 43, 235, 231, 94, 171, 51,
+            145, 214, 112, 29, 14, 232, 5, 16, 151, 140, 183, 141, 171, 9, 122,
+            181, 104, 182, 177, 193
+        ]);
 
-        let mut buffer = [7; 64];
-        let expected_data = [
-            53, 217, 166, 104, 28, 62, 3, 36, 62, 164, 173, 52, 186, 72, 109,
-            101, 35, 243, 223, 217, 59, 43, 85, 63, 181, 23, 183, 50, 79, 118,
-            213, 219, 122, 72, 169, 177, 253, 144, 107, 120, 229, 135, 35, 95,
-            27, 218, 223, 75, 73, 229, 73, 14, 44, 253, 89, 153, 107, 112, 250,
-            35, 17, 38, 13, 156
-        ];
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
+        ], [
+            69, 37, 68, 39, 41, 15, 107, 193, 255, 139, 122, 6, 170, 233, 217,
+            98, 89, 144, 182, 106, 21, 51, 200, 65, 239, 49, 222, 34, 215, 114,
+            40, 126, 104, 197, 7, 225, 197, 153, 31, 2, 102, 78, 76, 176, 84,
+            245, 246, 184, 177, 160, 133, 130, 6, 72, 149, 119, 192, 195, 132,
+            236, 234, 103, 246, 74
+        ]);
 
-        salsa20.encrypt(&mut buffer);
-        assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        fn test(key: &[u8], expected_data: [u8; 64]) {
+            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+            let counter = u64::from_le_bytes(
+                [109, 110, 111, 112, 113, 114, 115, 116]
+            );
+            let mut generator = Generator::new(&key, &nonce, counter);
+
+            let mut buffer = [0; 64];
+            generator.generate(&mut buffer, <[u8]>::copy_from_slice);
+            assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        }
+    }
+
+    #[test]
+    fn generate_with_overflow_test() {
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        ], [
+            39, 173, 46, 248, 30, 200, 82, 17, 48, 67, 254, 239, 37, 18, 13,
+            247, 241, 200, 61, 144, 10, 55, 50, 185, 6, 47, 246, 253, 143, 86,
+            187, 225, 134, 85, 110, 246, 161, 163, 43, 235, 231, 94, 171, 51,
+            145, 214, 112, 29, 14, 232, 5, 16, 151, 140, 183, 141, 171, 9, 122,
+            181, 104, 182, 177, 193
+        ]);
+
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
+        ], [
+            69, 37, 68, 39, 41, 15, 107, 193, 255, 139, 122, 6, 170, 233, 217,
+            98, 89, 144, 182, 106, 21, 51, 200, 65, 239, 49, 222, 34, 215, 114,
+            40, 126, 104, 197, 7, 225, 197, 153, 31, 2, 102, 78, 76, 176, 84,
+            245, 246, 184, 177, 160, 133, 130, 6, 72, 149, 119, 192, 195, 132,
+            236, 234, 103, 246, 74
+        ]);
+
+        fn test(key: &[u8], expected_data: [u8; 64]) {
+            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+            let counter = u64::from_le_bytes(
+                [109, 110, 111, 112, 113, 114, 115, 116]
+            );
+            let mut salsa = Salsa20::new(&key, &nonce, counter);
+
+            let mut buffer = [0; 64];
+            salsa.generate(&mut buffer[..8]);
+            salsa.generate(&mut buffer[8..17]);
+            salsa.generate(&mut buffer[17..29]);
+            salsa.generate(&mut buffer[29..64]);
+            assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        }
+    }
+
+    #[test]
+    fn encrypt_test() {
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        ], [
+            38, 172, 47, 249, 31, 201, 83, 16, 49, 66, 255, 238, 36, 19, 12,
+            246, 240, 201, 60, 145, 11, 54, 51, 184, 7, 46, 247, 252, 142, 87,
+            186, 224, 135, 84, 111, 247, 160, 162, 42, 234, 230, 95, 170, 50,
+            144, 215, 113, 28, 15, 233, 4, 17, 150, 141, 182, 140, 170, 8, 123,
+            180, 105, 183, 176, 192
+        ]);
+
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
+        ], [
+            68, 36, 69, 38, 40, 14, 106, 192, 254, 138, 123, 7, 171, 232, 216,
+            99, 88, 145, 183, 107, 20, 50, 201, 64, 238, 48, 223, 35, 214, 115,
+            41, 127, 105, 196, 6, 224, 196, 152, 30, 3, 103, 79, 77, 177, 85,
+            244, 247, 185, 176, 161, 132, 131, 7, 73, 148, 118, 193, 194, 133,
+            237, 235, 102, 247, 75
+        ]);
+
+        fn test(key: &[u8], expected_data: [u8; 64]) {
+            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+            let counter = u64::from_le_bytes(
+                [109, 110, 111, 112, 113, 114, 115, 116]
+            );
+            let mut generator = Generator::new(&key, &nonce, counter);
+
+            let mut buffer = [1; 64];
+            generator.generate(&mut buffer, xor_from_slice);
+            assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        }
+    }
+
+    #[test]
+    fn encrypt_with_overflow_test() {
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        ], [
+            38, 172, 47, 249, 31, 201, 83, 16, 49, 66, 255, 238, 36, 19, 12,
+            246, 240, 201, 60, 145, 11, 54, 51, 184, 7, 46, 247, 252, 142, 87,
+            186, 224, 135, 84, 111, 247, 160, 162, 42, 234, 230, 95, 170, 50,
+            144, 215, 113, 28, 15, 233, 4, 17, 150, 141, 182, 140, 170, 8, 123,
+            180, 105, 183, 176, 192
+        ]);
+
+        test(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
+            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
+        ], [
+            68, 36, 69, 38, 40, 14, 106, 192, 254, 138, 123, 7, 171, 232, 216,
+            99, 88, 145, 183, 107, 20, 50, 201, 64, 238, 48, 223, 35, 214, 115,
+            41, 127, 105, 196, 6, 224, 196, 152, 30, 3, 103, 79, 77, 177, 85,
+            244, 247, 185, 176, 161, 132, 131, 7, 73, 148, 118, 193, 194, 133,
+            237, 235, 102, 247, 75
+        ]);
+
+        fn test(key: &[u8], expected_data: [u8; 64]) {
+            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
+            let counter = u64::from_le_bytes(
+                [109, 110, 111, 112, 113, 114, 115, 116]
+            );
+            let mut salsa = Salsa20::new(&key, &nonce, counter);
+
+            let mut buffer = [1; 64];
+            salsa.encrypt(&mut buffer[..8]);
+            salsa.encrypt(&mut buffer[8..17]);
+            salsa.encrypt(&mut buffer[17..29]);
+            salsa.encrypt(&mut buffer[29..64]);
+            assert_eq!(buffer.to_vec(), expected_data.to_vec());
+        }
     }
 }
