@@ -1,5 +1,8 @@
 #![no_std]
 
+mod utils;
+use crate::utils::{u8_to_u32, xor_from_slice};
+
 fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
     let y1 = y1 ^ y0.wrapping_add(y3).rotate_left(7);
     let y2 = y2 ^ y1.wrapping_add(y0).rotate_left(9);
@@ -44,24 +47,6 @@ fn rowround(y: [u32; 16]) -> [u32; 16] {
 #[inline(always)]
 fn doubleround(y: [u32; 16]) -> [u32; 16] {
     rowround(columnround(y))
-}
-
-fn u8_to_u32(bytes: &[u8], u32_slice: &mut [u32]) {
-    for (index, value) in u32_slice.iter_mut().enumerate() {
-        let offset = index * 4;
-        *value = u32::from_le_bytes([
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3]
-        ]);
-    }
-}
-
-fn xor_from_slice(to: &mut[u8], from: &[u8]) {
-    for (to_byte, from_byte) in to.iter_mut().zip(from.iter()) {
-        *to_byte ^= from_byte;
-    }
 }
 
 #[derive(Clone, Copy)]
