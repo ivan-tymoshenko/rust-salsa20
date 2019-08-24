@@ -56,8 +56,8 @@ struct Overflow {
 }
 
 impl Overflow {
-    fn new() -> Overflow {
-        Overflow { buffer: [0; 64], offset: 64 }
+    fn new(buffer: [u8; 64], offset: usize) -> Overflow {
+        Overflow { buffer, offset }
     }
 
     fn modify<F>(&mut self, buffer: &mut [u8], modifier: F)
@@ -178,9 +178,8 @@ impl Generator {
         }
     }
 
-    fn generate<F>(&mut self, buffer: &mut[u8], modifier: F)
-        where F: Fn(&mut [u8], &[u8])
-    {
+    fn next(&mut self) -> [u8; 64] {
+        let mut buffer = [0; 64];
         (0..9)
             .fold(self.first_doubleround(), |block, _| doubleround(block))
             .iter()
@@ -189,10 +188,11 @@ impl Generator {
             .for_each(|(index, (drounds_value, &init_value))| {
                 let offset = index * 4;
                 let sum = drounds_value.wrapping_add(init_value);
-                modifier(&mut buffer[offset..offset + 4], &sum.to_le_bytes());
+                buffer[offset..offset + 4].copy_from_slice(&sum.to_le_bytes());
             });
 
         self.set_counter(self.counter.wrapping_add(1));
+        buffer
     }
 }
 
@@ -204,7 +204,7 @@ pub struct Salsa20 {
 
 impl Salsa20 {
     pub fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
-        let overflow = Overflow::new();
+        let overflow = Overflow::new([0; 64], 64);
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
     }
@@ -227,15 +227,11 @@ impl Salsa20 {
         let last_block_offset = buffer_len - (buffer_len - overflow_len) % 64;
 
         for offset in (overflow_len..last_block_offset).step_by(64) {
-            self.generator.generate(&mut buffer[offset..offset + 64], modifier);
+            modifier(&mut buffer[offset..offset + 64], &self.generator.next());
         }
 
         if last_block_offset != buffer_len {
-            self.generator.generate(
-                &mut self.overflow.buffer,
-                <[u8]>::copy_from_slice
-            );
-            self.overflow.offset = 0;
+            self.overflow = Overflow::new(self.generator.next(), 0);
             self.overflow.modify(&mut buffer[last_block_offset..], modifier);
         }
     }
@@ -447,44 +443,7 @@ mod tests {
             );
             let mut generator = Generator::new(&key, &nonce, counter);
 
-            let mut buffer = [0; 64];
-            generator.generate(&mut buffer, <[u8]>::copy_from_slice);
-            assert_eq!(buffer.to_vec(), expected_data.to_vec());
-        }
-    }
-
-    #[test]
-    fn encrypt_test() {
-        test(&[
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-        ], [
-            38, 172, 47, 249, 31, 201, 83, 16, 49, 66, 255, 238, 36, 19, 12,
-            246, 240, 201, 60, 145, 11, 54, 51, 184, 7, 46, 247, 252, 142, 87,
-            186, 224, 135, 84, 111, 247, 160, 162, 42, 234, 230, 95, 170, 50,
-            144, 215, 113, 28, 15, 233, 4, 17, 150, 141, 182, 140, 170, 8, 123,
-            180, 105, 183, 176, 192
-        ]);
-
-        test(&[
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
-            203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
-        ], [
-            68, 36, 69, 38, 40, 14, 106, 192, 254, 138, 123, 7, 171, 232, 216,
-            99, 88, 145, 183, 107, 20, 50, 201, 64, 238, 48, 223, 35, 214, 115,
-            41, 127, 105, 196, 6, 224, 196, 152, 30, 3, 103, 79, 77, 177, 85,
-            244, 247, 185, 176, 161, 132, 131, 7, 73, 148, 118, 193, 194, 133,
-            237, 235, 102, 247, 75
-        ]);
-
-        fn test(key: &[u8], expected_data: [u8; 64]) {
-            let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
-            let counter = u64::from_le_bytes(
-                [109, 110, 111, 112, 113, 114, 115, 116]
-            );
-            let mut generator = Generator::new(&key, &nonce, counter);
-
-            let mut buffer = [1; 64];
-            generator.generate(&mut buffer, xor_from_slice);
+            let buffer = generator.next();
             assert_eq!(buffer.to_vec(), expected_data.to_vec());
         }
     }
