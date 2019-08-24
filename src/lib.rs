@@ -46,14 +46,14 @@ fn doubleround(y: [u32; 16]) -> [u32; 16] {
     rowround(columnround(y))
 }
 
-fn u8_to_u32(value: &[u8], buffer: &mut [u32]) {
-    for (index, word) in buffer.iter_mut().enumerate() {
+fn u8_to_u32(bytes: &[u8], u32_slice: &mut [u32]) {
+    for (index, value) in u32_slice.iter_mut().enumerate() {
         let offset = index * 4;
-        *word = u32::from_le_bytes([
-            value[offset],
-            value[offset + 1],
-            value[offset + 2],
-            value[offset + 3]
+        *value = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3]
         ]);
     }
 }
@@ -86,53 +86,73 @@ impl Overflow {
 
 #[derive(Clone, Copy)]
 struct Generator {
-    y: [u32; 16],
-    z: [u32; 16],
-    r: [u32; 4],
+    init_matrix: [u32; 16],
+    cround_matrix: [u32; 16],
+    dround_values: [u32; 4],
     counter: u64
 }
 
 impl Generator {
     fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Generator {
-        let mut y = [0; 16];
-        y[0] = 1634760805;
-        y[15] = 1797285236;
-        y[8] = counter as u32;
-        y[9] = (counter >> 32) as u32;
-        u8_to_u32(&nonce[..], &mut y[6..8]);
+        let mut init_matrix = [0; 16];
+        init_matrix[0] = 1634760805;
+        init_matrix[15] = 1797285236;
+        init_matrix[8] = counter as u32;
+        init_matrix[9] = (counter >> 32) as u32;
+        u8_to_u32(&nonce[..], &mut init_matrix[6..8]);
 
         match key.len() {
             16 => {
-                u8_to_u32(&key[..], &mut y[1..5]);
-                u8_to_u32(&key[..], &mut y[11..15]);
-                y[5] = 824206446;
-                y[10] = 2036477238;
+                u8_to_u32(&key[..], &mut init_matrix[1..5]);
+                u8_to_u32(&key[..], &mut init_matrix[11..15]);
+                init_matrix[5] = 824206446;
+                init_matrix[10] = 2036477238;
             }
             32 => {
-                u8_to_u32(&key[..16], &mut y[1..5]);
-                u8_to_u32(&key[16..], &mut y[11..15]);
-                y[5] = 857760878;
-                y[10] = 2036477234;
+                u8_to_u32(&key[..16], &mut init_matrix[1..5]);
+                u8_to_u32(&key[16..], &mut init_matrix[11..15]);
+                init_matrix[5] = 857760878;
+                init_matrix[10] = 2036477234;
             } _ => {
                 panic!("Wrong key size.");
             }
         }
-        let z = columnround(y);
-        let r = quarterround(z[5], z[6], z[7], z[4]);
+        let cround_matrix = columnround(init_matrix);
+        let dround_values = quarterround(
+            cround_matrix[5],
+            cround_matrix[6],
+            cround_matrix[7],
+            cround_matrix[4]
+        );
 
-        Generator { y, z, r, counter }
+        Generator { init_matrix, cround_matrix, dround_values, counter }
     }
 
     fn first_doubleround(&self) -> [u32; 16] {
-        let [r5, r6, r7, r4] = self.r;
+        let [r5, r6, r7, r4] = self.dround_values;
         let [
             [r0, r1, r2, r3],
             [r10, r11, r8, r9],
             [r15, r12, r13, r14]
         ] = [
-            quarterround(self.z[0], self.z[1], self.z[2], self.z[3]),
-            quarterround(self.z[10], self.z[11], self.z[8], self.z[9]),
-            quarterround(self.z[15], self.z[12], self.z[13], self.z[14])
+            quarterround(
+                self.cround_matrix[0],
+                self.cround_matrix[1],
+                self.cround_matrix[2],
+                self.cround_matrix[3]
+            ),
+            quarterround(
+                self.cround_matrix[10],
+                self.cround_matrix[11],
+                self.cround_matrix[8],
+                self.cround_matrix[9]
+            ),
+            quarterround(
+                self.cround_matrix[15],
+                self.cround_matrix[12],
+                self.cround_matrix[13],
+                self.cround_matrix[14]
+            )
         ];
 
         [r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15]
@@ -140,46 +160,51 @@ impl Generator {
 
     fn set_counter(&mut self, counter: u64) {
         self.counter = counter;
-        self.y[8] = counter as u32;
+        self.init_matrix[8] = counter as u32;
         let [z0, z4, z8, z12] = quarterround(
-            self.y[0],
-            self.y[4],
-            self.y[8],
-            self.y[12]
+            self.init_matrix[0],
+            self.init_matrix[4],
+            self.init_matrix[8],
+            self.init_matrix[12]
         );
-        self.z[0] = z0;
-        self.z[8] = z8;
-        self.z[12] = z12;
+        self.cround_matrix[0] = z0;
+        self.cround_matrix[8] = z8;
+        self.cround_matrix[12] = z12;
 
         if counter > 0xffffffff_u64 {
-            self.y[9] = (counter >> 32) as u32;
+            self.init_matrix[9] = (counter >> 32) as u32;
             let [z5, z9, z13, z1] = quarterround(
-                self.y[5],
-                self.y[9],
-                self.y[13],
-                self.y[1]
+                self.init_matrix[5],
+                self.init_matrix[9],
+                self.init_matrix[13],
+                self.init_matrix[1]
             );
 
-            self.z[1] = z1;
-            self.z[9] = z9;
-            self.z[13] = z13;
+            self.cround_matrix[1] = z1;
+            self.cround_matrix[9] = z9;
+            self.cround_matrix[13] = z13;
 
-            self.r = quarterround(z5, self.z[6], self.z[7], z4);
+            self.dround_values = quarterround(
+                z5,
+                self.cround_matrix[6],
+                self.cround_matrix[7],
+                z4
+            );
         }
     }
 
-    fn generate<F>(&mut self, result: &mut[u8], modifier: F)
+    fn generate<F>(&mut self, buffer: &mut[u8], modifier: F)
         where F: Fn(&mut [u8], &[u8])
     {
         (0..9)
             .fold(self.first_doubleround(), |block, _| doubleround(block))
             .iter()
-            .zip(self.y.iter())
+            .zip(self.init_matrix.iter())
             .enumerate()
-            .for_each(|(index, (value, &value_copy))| {
+            .for_each(|(index, (drounds_value, &init_value))| {
                 let offset = index * 4;
-                let sum = value.wrapping_add(value_copy);
-                modifier(&mut result[offset..offset + 4], &sum.to_le_bytes());
+                let sum = drounds_value.wrapping_add(init_value);
+                modifier(&mut buffer[offset..offset + 4], &sum.to_le_bytes());
             });
 
         self.set_counter(self.counter.wrapping_add(1));
@@ -214,19 +239,19 @@ impl Salsa20 {
             }
         }
 
-        let last_offset = buffer_len - (buffer_len - overflow_len) % 64;
+        let last_block_offset = buffer_len - (buffer_len - overflow_len) % 64;
 
-        for offset in (overflow_len..last_offset).step_by(64) {
+        for offset in (overflow_len..last_block_offset).step_by(64) {
             self.generator.generate(&mut buffer[offset..offset + 64], modifier);
         }
 
-        if last_offset != buffer_len {
+        if last_block_offset != buffer_len {
             self.generator.generate(
                 &mut self.overflow.buffer,
                 <[u8]>::copy_from_slice
             );
             self.overflow.offset = 0;
-            self.overflow.modify(&mut buffer[last_offset..], modifier);
+            self.overflow.modify(&mut buffer[last_block_offset..], modifier);
         }
     }
 
@@ -353,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn create_init_block_test() {
+    fn create_init_matrix_test() {
         test(&[
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
         ], [
@@ -383,7 +408,7 @@ mod tests {
 
             let mut expected_data_u32 = [0; 16];
             u8_to_u32(&expected_data, &mut expected_data_u32);
-            assert_eq!(generator.y, expected_data_u32);
+            assert_eq!(generator.init_matrix, expected_data_u32);
         }
     }
 
@@ -399,10 +424,10 @@ mod tests {
         fn test(counter: u64, counter_as_u32: [u32; 2]) {
             let mut generator = Generator::new(&[0; 16], &[0; 8], 0);
             generator.set_counter(counter);
-            assert_eq!(generator.y[8..10], counter_as_u32);
+            assert_eq!(generator.init_matrix[8..10], counter_as_u32);
             assert_eq!(
                 generator.first_doubleround(),
-                doubleround(generator.y)
+                doubleround(generator.init_matrix)
             );
         };
     }
