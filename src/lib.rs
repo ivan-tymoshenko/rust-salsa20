@@ -203,7 +203,8 @@ pub struct Salsa20 {
 }
 
 impl Salsa20 {
-    pub fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
+    #[no_mangle]
+    pub extern "C" fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
         let overflow = Overflow::new([0; 64], 64);
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
@@ -236,15 +237,18 @@ impl Salsa20 {
         }
     }
 
-    pub fn set_counter(&mut self, counter: u64) {
+    #[no_mangle]
+    pub extern "C" fn set_counter(&mut self, counter: u64) {
         self.generator.set_counter(counter);
     }
 
-    pub fn generate(&mut self, buffer: &mut [u8]) {
+    #[no_mangle]
+    pub extern "C" fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &<[u8]>::copy_from_slice);
     }
 
-    pub fn encrypt(&mut self, buffer: &mut [u8]) {
+    #[no_mangle]
+    pub extern "C" fn encrypt(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &xor_from_slice);
     }
 }
