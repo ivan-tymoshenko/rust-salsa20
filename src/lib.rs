@@ -239,7 +239,9 @@ impl Salsa20 {
 
     #[no_mangle]
     pub extern "C" fn set_counter(&mut self, counter: u64) {
-        self.generator.set_counter(counter);
+        if counter != self.generator.counter {
+            self.generator.set_counter(counter);
+        }
     }
 
     #[no_mangle]
