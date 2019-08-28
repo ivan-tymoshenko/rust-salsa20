@@ -69,6 +69,12 @@ impl Overflow {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Key {
+    Key16([u8; 16]),
+    Key32([u8; 32])
+}
+
 #[derive(Clone, Copy)]
 struct Generator {
     init_matrix: [u32; 16],
@@ -78,7 +84,7 @@ struct Generator {
 }
 
 impl Generator {
-    fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Generator {
+    fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Generator {
         let mut init_matrix = [0; 16];
         init_matrix[0] = 1634760805;
         init_matrix[15] = 1797285236;
@@ -86,22 +92,21 @@ impl Generator {
         init_matrix[9] = (counter >> 32) as u32;
         u8_to_u32(&nonce[..], &mut init_matrix[6..8]);
 
-        match key.len() {
-            16 => {
+        match key {
+            Key::Key16(key) => {
                 u8_to_u32(&key[..], &mut init_matrix[1..5]);
                 u8_to_u32(&key[..], &mut init_matrix[11..15]);
                 init_matrix[5] = 824206446;
                 init_matrix[10] = 2036477238;
             }
-            32 => {
+            Key::Key32(key) => {
                 u8_to_u32(&key[..16], &mut init_matrix[1..5]);
                 u8_to_u32(&key[16..], &mut init_matrix[11..15]);
                 init_matrix[5] = 857760878;
                 init_matrix[10] = 2036477234;
-            } _ => {
-                panic!("Wrong key size.");
             }
         }
+
         let cround_matrix = columnround(init_matrix);
         let dround_values = quarterround(
             cround_matrix[5],
@@ -204,7 +209,7 @@ pub struct Salsa20 {
 
 impl Salsa20 {
     #[no_mangle]
-    pub extern "C" fn new(key: &[u8], nonce: &[u8; 8], counter: u64) -> Salsa20 {
+    pub extern "C" fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Salsa20 {
         let overflow = Overflow::new([0; 64], 64);
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
@@ -366,19 +371,19 @@ mod tests {
 
     #[test]
     fn create_init_matrix_test() {
-        test(&[
+        test(Key::Key16([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-        ], [
+        ]), [
             101, 120, 112, 97, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
             15, 16, 110, 100, 32, 49, 101, 102, 103, 104, 105, 106, 107, 108,
             109, 110, 111, 112, 113, 114, 115, 116, 54, 45, 98, 121, 1, 2, 3,
             4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 116, 101, 32, 107
         ]);
 
-        test(&[
+        test(Key::Key32([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
             203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
-        ], [
+        ]), [
             101, 120, 112, 97, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
             15, 16, 110, 100, 32, 51, 101, 102, 103, 104, 105, 106, 107, 108,
             109, 110, 111, 112, 113, 114, 115, 116, 50, 45, 98, 121, 201, 202,
@@ -386,7 +391,7 @@ mod tests {
             216, 116, 101, 32, 107
         ]);
 
-        fn test(key: &[u8], expected_data: [u8; 64]) {
+        fn test(key: Key, expected_data: [u8; 64]) {
             let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
             let counter = u64::from_le_bytes(
                 [109, 110, 111, 112, 113, 114, 115, 116]
@@ -409,7 +414,8 @@ mod tests {
         test(0x012345678abcdef, [0x78abcdef, 0x123456]);
 
         fn test(counter: u64, counter_as_u32: [u32; 2]) {
-            let mut generator = Generator::new(&[0; 16], &[0; 8], 0);
+            let key = Key::Key16([0; 16]);
+            let mut generator = Generator::new(&key, &[0; 8], 0);
             generator.set_counter(counter);
             assert_eq!(generator.init_matrix[8..10], counter_as_u32);
             assert_eq!(
@@ -421,9 +427,9 @@ mod tests {
 
     #[test]
     fn generate_test() {
-        test(&[
+        test(Key::Key16([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-        ], [
+        ]), [
             39, 173, 46, 248, 30, 200, 82, 17, 48, 67, 254, 239, 37, 18, 13,
             247, 241, 200, 61, 144, 10, 55, 50, 185, 6, 47, 246, 253, 143, 86,
             187, 225, 134, 85, 110, 246, 161, 163, 43, 235, 231, 94, 171, 51,
@@ -431,10 +437,10 @@ mod tests {
             181, 104, 182, 177, 193
         ]);
 
-        test(&[
+        test(Key::Key32([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 201, 202,
             203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216
-        ], [
+        ]), [
             69, 37, 68, 39, 41, 15, 107, 193, 255, 139, 122, 6, 170, 233, 217,
             98, 89, 144, 182, 106, 21, 51, 200, 65, 239, 49, 222, 34, 215, 114,
             40, 126, 104, 197, 7, 225, 197, 153, 31, 2, 102, 78, 76, 176, 84,
@@ -442,7 +448,7 @@ mod tests {
             236, 234, 103, 246, 74
         ]);
 
-        fn test(key: &[u8], expected_data: [u8; 64]) {
+        fn test(key: Key, expected_data: [u8; 64]) {
             let nonce = [101, 102, 103, 104, 105, 106, 107, 108];
             let counter = u64::from_le_bytes(
                 [109, 110, 111, 112, 113, 114, 115, 116]
