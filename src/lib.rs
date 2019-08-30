@@ -1,3 +1,8 @@
+//! # Salsa20
+//! Salsa20 is a stream cipher built on a pseudo-random function based on
+//! add-rotate-xor operations — 32-bit addition, bitwise addition and
+//! rotation operations
+
 #![no_std]
 
 mod utils;
@@ -69,6 +74,7 @@ impl Overflow {
     }
 }
 
+/// Key for Salsa20, 32-byte or 16-byte sequence
 #[derive(Clone, Copy, Debug)]
 pub enum Key {
     Key16([u8; 16]),
@@ -201,6 +207,7 @@ impl Generator {
     }
 }
 
+/// The Salsa20 stream cipher
 #[derive(Clone, Copy)]
 pub struct Salsa20 {
     generator: Generator,
@@ -208,6 +215,11 @@ pub struct Salsa20 {
 }
 
 impl Salsa20 {
+    /// creates Salsa20 stream cipher
+    /// # Arguments
+    /// * `key` - secret key, 32-byte or 16-byte sequence
+    /// * `nounce` - 8-byte unique sequence
+    /// * `counter` - 8-byte unique number of each 64-byte block 
     #[no_mangle]
     pub extern "C" fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Salsa20 {
         let overflow = Overflow::new([0; 64], 64);
@@ -242,6 +254,7 @@ impl Salsa20 {
         }
     }
 
+    /// sets unique number of next 64-byte block 
     #[no_mangle]
     pub extern "C" fn set_counter(&mut self, counter: u64) {
         if counter != self.generator.counter {
@@ -249,11 +262,13 @@ impl Salsa20 {
         }
     }
 
+    /// generates sequence to `buffer` with `nonce` under the `key`
     #[no_mangle]
     pub extern "C" fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &<[u8]>::copy_from_slice);
     }
 
+    /// encrypts a `buffer` with `nonce` under the `key`
     #[no_mangle]
     pub extern "C" fn encrypt(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &xor_from_slice);
