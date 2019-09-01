@@ -46,6 +46,7 @@
 #![no_std]
 
 mod utils;
+pub mod embedded;
 use crate::utils::{u8_to_u32, xor_from_slice};
 
 fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
@@ -94,6 +95,7 @@ fn doubleround(y: [u32; 16]) -> [u32; 16] {
     rowround(columnround(y))
 }
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 struct Overflow {
     buffer: [u8; 64],
@@ -115,12 +117,14 @@ impl Overflow {
 }
 
 /// Key for Salsa20, 32-byte or 16-byte sequence
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub enum Key {
     Key16([u8; 16]),
     Key32([u8; 32])
 }
 
+#[repr(C)]
 #[derive(Clone, Copy)]
 struct Generator {
     init_matrix: [u32; 16],
@@ -248,6 +252,7 @@ impl Generator {
 }
 
 /// The Salsa20 stream cipher
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Salsa20 {
     generator: Generator,
