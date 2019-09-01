@@ -5,10 +5,10 @@ authors = ["bugagashenkj <bugagashenkj@gmail.com>"]
 edition = "2018"
 license = "MIT"
 repository = "https://github.com/bugagashenkj/salsa20"
-description = "Fast implementation of salsa20 in safe rust with supporting embedded systems"
+description = "Fast implementation of salsa20 in safe rust"
 
 [dev-dependencies]
-criterion = "0.2"
+criterion = "^0.3"
 
 [[bench]]
 name = "benchmarks"

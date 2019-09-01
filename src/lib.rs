@@ -260,8 +260,7 @@ impl Salsa20 {
     /// * `key` - secret key, 32-byte or 16-byte sequence
     /// * `nounce` - 8-byte unique sequence
     /// * `counter` - 8-byte unique number of each 64-byte block
-    #[no_mangle]
-    pub extern "C" fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Salsa20 {
+    pub fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Salsa20 {
         let overflow = Overflow::new([0; 64], 64);
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
@@ -295,22 +294,19 @@ impl Salsa20 {
     }
 
     /// sets unique number of next 64-byte block
-    #[no_mangle]
-    pub extern "C" fn set_counter(&mut self, counter: u64) {
+    pub fn set_counter(&mut self, counter: u64) {
         if counter != self.generator.counter {
             self.generator.set_counter(counter);
         }
     }
 
     /// generates sequence to `buffer` with `nonce` under the `key`
-    #[no_mangle]
-    pub extern "C" fn generate(&mut self, buffer: &mut [u8]) {
+    pub fn generate(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &<[u8]>::copy_from_slice);
     }
 
     /// encrypts a `buffer` with `nonce` under the `key`
-    #[no_mangle]
-    pub extern "C" fn encrypt(&mut self, buffer: &mut [u8]) {
+    pub fn encrypt(&mut self, buffer: &mut [u8]) {
         self.modify(buffer, &xor_from_slice);
     }
 }
