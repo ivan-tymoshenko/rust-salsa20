@@ -297,6 +297,7 @@ impl Salsa20 {
         if counter != self.generator.counter {
             self.generator.set_counter(counter);
         }
+        self.overflow = Overflow::new([0; 64], 64);
     }
 
     /// generates sequence to `buffer` with `nonce` under the `key`
