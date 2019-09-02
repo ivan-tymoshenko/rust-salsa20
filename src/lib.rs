@@ -44,6 +44,7 @@
 //! ```
 
 #![no_std]
+#![feature(lang_items)]
 
 mod utils;
 pub mod embedded;
@@ -246,7 +247,8 @@ impl Generator {
                 buffer[offset..offset + 4].copy_from_slice(&sum.to_le_bytes());
             });
 
-        self.set_counter(self.counter.wrapping_add(1));
+        let new_counter = self.counter.wrapping_add(1);
+        self.set_counter(new_counter);
         buffer
     }
 }
