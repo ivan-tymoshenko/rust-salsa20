@@ -44,11 +44,11 @@ fn generate_test() {
     );
 
     fn test(counter: u64, expected_data: Vec<u8>) {
-        let key = &Key32([
+        let key = Key32([
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
             17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
         ]);
-        let nonce = &[1, 2, 3, 4, 5, 6, 7, 8];
+        let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
         let mut salsa = Salsa20::new(key, nonce, counter);
         let mut buffer = vec![0; 200];
 

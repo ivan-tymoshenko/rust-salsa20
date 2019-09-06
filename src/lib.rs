@@ -11,11 +11,11 @@
 //! use rust_salsa20::{Salsa20, Key::Key32};
 //!
 //! fn main() {
-//!     let key = &Key32([
+//!     let key = Key32([
 //!         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 //!         17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
 //!     ]);
-//!     let nonce = &[1, 2, 3, 4, 5, 6, 7, 8];
+//!     let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
 //!     let mut salsa = Salsa20::new(key, nonce, 0);
 //!     let mut buffer = [0; 10];
 //!     salsa.generate(&mut buffer);
@@ -30,11 +30,11 @@
 //! use rust_salsa20::{Salsa20, Key::Key32};
 //!
 //! fn main() {
-//!     let key = &Key32([
+//!     let key = Key32([
 //!         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 //!         17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
 //!     ]);
-//!     let nonce = &[1, 2, 3, 4, 5, 6, 7, 8];
+//!     let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
 //!     let mut salsa = Salsa20::new(key, nonce, 0);
 //!     let mut buffer = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 //!     salsa.encrypt(&mut buffer);
@@ -140,7 +140,7 @@ struct Generator {
 }
 
 impl Generator {
-    fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Generator {
+    fn new(key: Key, nonce: [u8; 8], counter: u64) -> Generator {
         let mut init_matrix = [0; 16];
         init_matrix[0] = 1634760805;
         init_matrix[15] = 1797285236;
@@ -270,7 +270,7 @@ impl Salsa20 {
     /// * `key` - secret key, 32-byte or 16-byte sequence
     /// * `nounce` - 8-byte unique sequence
     /// * `counter` - 8-byte unique number of each 64-byte block
-    pub fn new(key: &Key, nonce: &[u8; 8], counter: u64) -> Salsa20 {
+    pub fn new(key: Key, nonce: [u8; 8], counter: u64) -> Salsa20 {
         let overflow = Overflow::new([0; 64], 64);
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
@@ -458,7 +458,7 @@ mod tests {
             let counter = u64::from_le_bytes(
                 [109, 110, 111, 112, 113, 114, 115, 116]
             );
-            let generator = Generator::new(&key, &nonce, counter);
+            let generator = Generator::new(key, nonce, counter);
 
             let mut expected_data_u32 = [0; 16];
             u8_to_u32(&expected_data, &mut expected_data_u32);
@@ -477,7 +477,7 @@ mod tests {
 
         fn test(counter: u64, counter_as_u32: [u32; 2]) {
             let key = Key::Key16([0; 16]);
-            let mut generator = Generator::new(&key, &[0; 8], 0);
+            let mut generator = Generator::new(key, [0; 8], 0);
             generator.set_counter(counter);
             assert_eq!(generator.init_matrix[8..10], counter_as_u32);
             assert_eq!(
@@ -515,7 +515,7 @@ mod tests {
             let counter = u64::from_le_bytes(
                 [109, 110, 111, 112, 113, 114, 115, 116]
             );
-            let mut generator = Generator::new(&key, &nonce, counter);
+            let mut generator = Generator::new(key, nonce, counter);
 
             let buffer = generator.next();
             assert_eq!(buffer.to_vec(), expected_data.to_vec());
