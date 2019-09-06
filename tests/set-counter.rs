@@ -37,10 +37,10 @@ fn generate_test() {
         let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
         let mut salsa = Salsa20::new(key, nonce, 0);
         let mut buffer = vec![0; 100];
-        salsa.generate(&mut buffer);
+        salsa.generate(&mut buffer, 0);
 
         salsa.set_counter(counter);
-        salsa.generate(&mut buffer);
+        salsa.generate(&mut buffer, 0);
 
         assert_eq!(buffer, expected_data);
     }

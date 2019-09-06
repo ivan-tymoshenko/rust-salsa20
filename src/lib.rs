@@ -18,7 +18,7 @@
 //!     let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
 //!     let mut salsa = Salsa20::new(key, nonce, 0);
 //!     let mut buffer = [0; 10];
-//!     salsa.generate(&mut buffer);
+//!     salsa.generate(&mut buffer, 0);
 //!
 //!     assert_eq!(buffer, [45, 134, 38, 166, 142, 36, 28, 146, 116, 157]);
 //! }
@@ -37,16 +37,16 @@
 //!     let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
 //!     let mut salsa = Salsa20::new(key, nonce, 0);
 //!     let mut buffer = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-//!     salsa.encrypt(&mut buffer);
+//!     salsa.encrypt(&mut buffer, 0);
 //!
 //!     assert_eq!(buffer, [44, 132, 37, 162, 139, 34, 27, 154, 125, 157]);
 //! }
 //! ```
 
-#![no_std]
+extern crate crossbeam;
 
 mod utils;
-use core::fmt;
+use std::fmt;
 use crate::utils::{u8_to_u32, xor_from_slice};
 
 fn quarterround(y0: u32, y1: u32, y2: u32, y3: u32) -> [u32; 4] {
@@ -261,7 +261,7 @@ impl Generator {
 #[derive(Clone, Copy, Debug)]
 pub struct Salsa20 {
     generator: Generator,
-    overflow: Overflow
+    overflow: Overflow,
 }
 
 impl Salsa20 {
@@ -275,9 +275,10 @@ impl Salsa20 {
         let generator = Generator::new(key, nonce, counter);
         Salsa20 { generator, overflow }
     }
-
-    fn modify<F>(&mut self, buffer: &mut [u8], modifier: &F)
-        where F: Fn(&mut [u8], &[u8])
+    
+    fn modify<F, T>(&mut self, buffer: &mut [u8], modifier: &F, f: T)
+        where F: Fn(&mut [u8], &[u8]) + Sync,
+              T: Fn(&mut Self, &mut [u8], &F)
     {
         let buffer_len = buffer.len();
         let overflow_len = 64 - self.overflow.offset;
@@ -292,16 +293,47 @@ impl Salsa20 {
         }
 
         let last_block_offset = buffer_len - (buffer_len - overflow_len) % 64;
+        let (buffer, last_block) = buffer.split_at_mut(last_block_offset);
+        let buffer = &mut buffer[overflow_len..];
 
-        for offset in (overflow_len..last_block_offset).step_by(64) {
-            modifier(&mut buffer[offset..offset + 64], &self.generator.next());
-        }
+        f(self, buffer, modifier);
 
         if last_block_offset != buffer_len {
             self.overflow = Overflow::new(self.generator.next(), 0);
-            self.overflow.modify(&mut buffer[last_block_offset..], modifier);
+            self.overflow.modify(last_block, modifier);
         }
     }
+
+    fn f2<F>(&mut self, buffer: &mut [u8], modifier: &F)
+        where F: Fn(&mut [u8], &[u8]) + Sync
+    {
+        for offset in (0..buffer.len()).step_by(64) {
+            modifier(&mut buffer[offset..offset + 64], &self.generator.next());
+        }
+    }
+
+    fn f1<F>(&mut self, buffer: &mut [u8], modifier: &F)
+        where F: Fn(&mut [u8], &[u8]) + Sync
+    {
+        let threads_number = (buffer.len() / 64).min(1);
+        crossbeam::scope(|s| {
+            (0..threads_number).fold(buffer, |buffer, thread_number| {
+                let step = (buffer.len() / 64 - 1) / (threads_number - thread_number) + 1;
+                let (thread_buffer, buffer) = buffer.split_at_mut(step * 64);
+                let mut generator = self.generator;
+                self.generator.set_counter(
+                    self.generator.counter.wrapping_add(step as u64)
+                );
+                s.spawn(move |_| {
+                    for offset in (0..thread_buffer.len()).step_by(64) {
+                        modifier(&mut thread_buffer[offset..offset + 64], &generator.next());
+                    }
+                });
+                buffer
+            });
+        }).unwrap();
+    }
+
 
     /// sets unique number of next 64-byte block
     pub fn set_counter(&mut self, counter: u64) {
@@ -312,13 +344,13 @@ impl Salsa20 {
     }
 
     /// generates sequence to `buffer` with `nonce` under the `key`
-    pub fn generate(&mut self, buffer: &mut [u8]) {
-        self.modify(buffer, &<[u8]>::copy_from_slice);
+    pub fn generate(&mut self, buffer: &mut [u8], threads_number: usize) {
+        self.modify(buffer, &<[u8]>::copy_from_slice, Salsa20::f2);
     }
 
     /// encrypts a `buffer` with `nonce` under the `key`
-    pub fn encrypt(&mut self, buffer: &mut [u8]) {
-        self.modify(buffer, &xor_from_slice);
+    pub fn encrypt(&mut self, buffer: &mut [u8], threads_number: usize) {
+        self.modify(buffer, &xor_from_slice, Salsa20::f1);
     }
 }
 

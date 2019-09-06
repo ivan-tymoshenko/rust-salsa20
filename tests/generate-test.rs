@@ -52,10 +52,10 @@ fn generate_test() {
         let mut salsa = Salsa20::new(key, nonce, counter);
         let mut buffer = vec![0; 200];
 
-        salsa.generate(&mut buffer[..7]);
-        salsa.generate(&mut buffer[7..13]);
-        salsa.generate(&mut buffer[13..197]);
-        salsa.generate(&mut buffer[197..200]);
+        salsa.generate(&mut buffer[..7], 0);
+        salsa.generate(&mut buffer[7..13], 0);
+        salsa.generate(&mut buffer[13..197], 0);
+        salsa.generate(&mut buffer[197..200], 0);
 
         assert_eq!(buffer, expected_data);
     }

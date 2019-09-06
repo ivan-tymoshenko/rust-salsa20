@@ -6,25 +6,25 @@ use criterion::*;
 
 fn encrypt_1_kb(c: &mut Criterion) {
     let mut salsa20 = Salsa20::new(Key16([1; 16]), [0; 8], 0);
-    let mut buffer = [0; 1024];
+    let mut buffer = [0; 1024 * 1024];
 
     c.bench(
         "encrypt",
         Benchmark::new(
-            "1Kb", move |b| b.iter(|| salsa20.encrypt(black_box(&mut buffer)))
-        ).throughput(Throughput::Bytes(1024))
+            "1Kb", move |b| b.iter(|| salsa20.encrypt(black_box(&mut buffer), 0))
+        ).throughput(Throughput::Bytes(1024 * 1024))
     );
 }
 
 fn generate_1_kb(c: &mut Criterion) {
     let mut salsa20 = Salsa20::new(Key16([2; 16]), [0; 8], 0);
-    let mut buffer = [0; 1024];
+    let mut buffer = vec![0; 1024 * 1024];
 
     c.bench(
         "generate",
         Benchmark::new(
-            "1Kb", move |b| b.iter(|| salsa20.generate(black_box(&mut buffer)))
-        ).throughput(Throughput::Bytes(1024))
+            "1Kb", move |b| b.iter(|| salsa20.generate(black_box(&mut buffer), 0))
+        ).throughput(Throughput::Bytes(1024 * 1024))
     );
 }
 
@@ -37,10 +37,10 @@ fn generate_1_kb_with_overflow(c: &mut Criterion) {
         Benchmark::new(
             "1Kb",
             move |b| b.iter(|| {
-                salsa20.generate(black_box(&mut buffer[0..7]));
-                salsa20.generate(black_box(&mut buffer[7..259]));
-                salsa20.generate(black_box(&mut buffer[259..938]));
-                salsa20.generate(black_box(&mut buffer[938..1024]));
+                salsa20.generate(black_box(&mut buffer[0..7]), 0);
+                salsa20.generate(black_box(&mut buffer[7..259]), 0);
+                salsa20.generate(black_box(&mut buffer[259..938]), 0);
+                salsa20.generate(black_box(&mut buffer[938..1024]), 0);
             })
         ).throughput(Throughput::Bytes(1024))
     );

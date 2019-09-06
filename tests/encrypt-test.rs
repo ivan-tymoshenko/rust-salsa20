@@ -52,10 +52,10 @@ fn encrypt_test() {
         let mut salsa = Salsa20::new(key, nonce, counter);
         let mut buffer = vec![7; 200];
 
-        salsa.encrypt(&mut buffer[..7]);
-        salsa.encrypt(&mut buffer[7..13]);
-        salsa.encrypt(&mut buffer[13..197]);
-        salsa.encrypt(&mut buffer[197..200]);
+        salsa.encrypt(&mut buffer[..7], 0);
+        salsa.encrypt(&mut buffer[7..13], 0);
+        salsa.encrypt(&mut buffer[13..197], 0);
+        salsa.encrypt(&mut buffer[197..200], 0);
 
         assert_eq!(buffer, expected_data);
     }

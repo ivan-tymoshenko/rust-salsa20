@@ -7,6 +7,9 @@ license = "MIT"
 repository = "https://github.com/bugagashenkj/salsa20"
 description = "Fast implementation of salsa20 in safe rust"
 
+[dependencies]
+crossbeam = "0.7"
+
 [dev-dependencies]
 criterion = "^0.3"
 
