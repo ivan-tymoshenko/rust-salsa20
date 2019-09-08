@@ -54,9 +54,7 @@ fn encrypt_test() {
 
         salsa.encrypt(&mut buffer[..7]);
         salsa.encrypt(&mut buffer[7..13]);
-        salsa.encrypt(&mut buffer[13..57]);
-        salsa.encrypt(&mut buffer[57..124]);
-        salsa.encrypt(&mut buffer[124..197]);
+        salsa.encrypt(&mut buffer[13..197]);
         salsa.encrypt(&mut buffer[197..200]);
 
         assert_eq!(buffer, expected_data);

@@ -54,9 +54,7 @@ fn generate_test() {
 
         salsa.generate(&mut buffer[..7]);
         salsa.generate(&mut buffer[7..13]);
-        salsa.generate(&mut buffer[13..57]);
-        salsa.generate(&mut buffer[57..124]);
-        salsa.generate(&mut buffer[124..197]);
+        salsa.generate(&mut buffer[13..197]);
         salsa.generate(&mut buffer[197..200]);
 
         assert_eq!(buffer, expected_data);
