@@ -261,7 +261,7 @@ impl Generator {
 #[derive(Clone, Copy, Debug)]
 pub struct Salsa20 {
     generator: Generator,
-    overflow: Overflow,
+    overflow: Overflow
 }
 
 impl Salsa20 {
@@ -293,14 +293,11 @@ impl Salsa20 {
         }
 
         let last_block_offset = buffer_len - (buffer_len - overflow_len) % 64;
-        let (buffer, last_block) = buffer.split_at_mut(last_block_offset);
-        let buffer = &mut buffer[overflow_len..];
-
-        f(self, buffer, modifier);
+        f(self, &mut buffer[overflow_len..last_block_offset], modifier);
 
         if last_block_offset != buffer_len {
             self.overflow = Overflow::new(self.generator.next(), 0);
-            self.overflow.modify(last_block, modifier);
+            self.overflow.modify(&mut buffer[last_block_offset..], modifier);
         }
     }
 
