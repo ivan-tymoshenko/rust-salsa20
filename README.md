@@ -6,6 +6,10 @@
 
 [Salsa20](https://cr.yp.to/snuffle/spec.pdf) is a stream cipher built on a pseudo-random function based on add-rotate-xor operations — 32-bit addition, bitwise addition and rotation operations.
 
+## Optimization of doubleround calculations
+
+The doubleround function modifies the initial matrix 10 times to encrypt every 64-byte block. For each subsequent 64-byte block in the matrix, only 8 bytes associated with the counter are changed. Immutable bytes can be used to pre-compute the result of the first doubleround call. A preliminary calculation of the original matrix optimizes the first call to the doubleround function, reducing the number of calls to the quarterround function from 8 to 4 with a counter of less than 2 ^ 32 and from 8 to 6 with a counter of more than 2 ^ 32, which reduces the algorithmic complexity of the Salsa20 function by 5 and 2.5 percent respectively.
+
 ## Usage
 
 To install rust-salsa20, add the following to your Cargo.toml:
