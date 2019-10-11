@@ -16,7 +16,7 @@ To install rust-salsa20, add the following to your Cargo.toml:
 
 ```toml
 [dependencies]
-rust-salsa20 = "^0.2"
+rust-salsa20 = "^0.3"
 ```
 
 ## Examples
